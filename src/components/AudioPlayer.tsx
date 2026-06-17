@@ -223,7 +223,9 @@ export default function AudioPlayer() {
             useNativeDriver: true,
           }).start(() => {
             setShowQueueModal(false);
-            queueTranslateY.setValue(0);
+            setTimeout(() => {
+              queueTranslateY.setValue(0);
+            }, 300);
           });
         } else {
           // Snap back
