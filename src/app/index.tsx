@@ -192,13 +192,13 @@ export default function HomeScreen() {
     };
   }, [loading]);
 
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh = false) => {
     try {
       const [devResult, msgResult, eventResult, seriesResult] = await Promise.allSettled([
-        apiService.getTodaysDevotional(),
-        apiService.getRecentMessages(100),
-        apiService.getUpcomingEvents(),
-        apiService.getAllSeries(),
+        apiService.getTodaysDevotional(forceRefresh),
+        apiService.getRecentMessages(100, forceRefresh),
+        apiService.getUpcomingEvents(forceRefresh),
+        apiService.getAllSeries(forceRefresh),
       ]);
 
       if (devResult.status === 'fulfilled') {
@@ -236,11 +236,16 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchData();
+    // Silently pre-load remaining categories cache in the background after 2 seconds
+    const timer = setTimeout(() => {
+      apiService.preloadAllCaches().catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchData();
+    fetchData(true);
   };
 
   const handleSelectSermon = (track: Message) => {
@@ -628,7 +633,7 @@ export default function HomeScreen() {
                           elevation: 1,
                         }
                       ]}
-                      onPress={() => router.push('/events')}
+                      onPress={() => router.push({ pathname: '/events', params: { eventId: String(evt.eventId) } })}
                     >
                       <GlossyOverlay isDark={activeScheme === 'dark'} />
                       {evt.bannerImageUrl ? (

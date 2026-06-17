@@ -17,7 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { apiService, ChurchEvent, EventSession } from '../services/api';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
 import { Calendar, MapPin, Clock, ChevronLeft, ChevronRight, User } from 'lucide-react-native';
@@ -91,6 +91,9 @@ export default function EventsScreen() {
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
   const themeColors = Colors[activeScheme === 'dark' ? 'dark' : 'light'];
 
+  const { eventId } = useLocalSearchParams<{ eventId?: string }>();
+  const autoSelectedRef = useRef<string | null>(null);
+
   const [events, setEvents] = useState<ChurchEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -152,6 +155,23 @@ export default function EventsScreen() {
     fetchEvents();
   }, []);
 
+  // Handle deep link / parameter passing for auto-selecting an event from the Home screen
+  useEffect(() => {
+    if (events.length > 0) {
+      if (eventId) {
+        if (autoSelectedRef.current !== eventId) {
+          const matchedEvent = events.find(e => String(e.eventId) === String(eventId));
+          if (matchedEvent) {
+            autoSelectedRef.current = String(eventId);
+            handleSelectEvent(matchedEvent);
+          }
+        }
+      } else {
+        autoSelectedRef.current = null;
+      }
+    }
+  }, [events, eventId]);
+
   const fetchEvents = async (forceRefresh = false) => {
     if (!forceRefresh && eventsMainCache) {
       setEvents(eventsMainCache);
@@ -160,7 +180,7 @@ export default function EventsScreen() {
     }
     setLoading(true);
     try {
-      const data = await apiService.getUpcomingEvents();
+      const data = await apiService.getUpcomingEvents(forceRefresh);
       setEvents(data);
       eventsMainCache = data;
     } catch (error) {
@@ -220,11 +240,11 @@ export default function EventsScreen() {
 
   return (
     <LinearGradient colors={bgColors} style={styles.container}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
       {selectedEvent ? (
         /* SESSIONS TIMELINE VIEW */
         <ScrollView 
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 150 + insets.bottom }]} 
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16, paddingBottom: 150 + insets.bottom }]} 
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeColors.primary} />
@@ -234,6 +254,12 @@ export default function EventsScreen() {
             onPress={() => {
               setSelectedEvent(null);
               setSessions([]);
+              autoSelectedRef.current = null;
+              try {
+                router.setParams({ eventId: undefined });
+              } catch (e) {
+                console.warn('Error clearing eventId params:', e);
+              }
             }}
             style={styles.backLink}
           >

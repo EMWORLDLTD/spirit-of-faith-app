@@ -8,6 +8,7 @@
     "scheme": "spiritoffaithapp",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.spiritoffaith.app",
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "UIBackgroundModes": [

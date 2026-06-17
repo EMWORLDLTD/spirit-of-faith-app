@@ -246,7 +246,7 @@ export default function DevotionalsScreen() {
     }
     setTodayLoading(true);
     try {
-      const data = await apiService.getTodaysDevotional();
+      const data = await apiService.getTodaysDevotional(forceRefresh);
       setTodayDevotional(data);
       todayDevotionalCache = data;
     } catch (error) {
@@ -347,24 +347,24 @@ export default function DevotionalsScreen() {
           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 }
         ]}>
           {selectedDevotional ? (
-            <TouchableOpacity 
-              onPress={() => setSelectedDevotional(null)}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}
-            >
+            <TouchableOpacity onPress={() => setSelectedDevotional(null)} style={styles.backBtn}>
               <ChevronLeft size={24} color={themeColors.text} />
-              <Text style={{ color: themeColors.text, fontWeight: '600', marginLeft: 4, fontSize: 16 }}>Back</Text>
             </TouchableOpacity>
           ) : (
-            <Text style={[styles.headerTitle, { color: themeColors.text }]}>Devotional</Text>
+            <View style={{ width: 36 }} />
           )}
 
-          {activeDev && (
+          <Text style={[styles.headerTitle, { color: themeColors.text }]}>Devotional</Text>
+
+          {activeDev ? (
             <TouchableOpacity 
               onPress={() => setShowMenu(!showMenu)} 
-              style={{ padding: 8 }}
+              style={styles.moreBtn}
             >
               <MoreVertical size={22} color={themeColors.text} />
             </TouchableOpacity>
+          ) : (
+            <View style={{ width: 36 }} />
           )}
         </View>
 
@@ -778,9 +778,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   titleRow: {
-    height: 48,
+    height: 56,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  backBtn: {
+    padding: 6,
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreBtn: {
+    padding: 6,
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 18,

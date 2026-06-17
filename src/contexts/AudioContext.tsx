@@ -4,7 +4,7 @@ import { Alert, AppState, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { StorageAccessFramework } from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { Message } from '../services/api';
+import { Message, apiService } from '../services/api';
 
 interface AudioContextType {
   currentTrack: Message | null;
@@ -179,6 +179,129 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     };
   }, []);
+
+  // Background resolver for missing series track numbers
+  useEffect(() => {
+    let active = true;
+    const resolveTrackNumbers = async () => {
+      const tracksToResolve = trackList.filter(t => t.seriesId && !t.originalTrackNumber);
+      if (tracksToResolve.length === 0) return;
+
+      let updated = false;
+      const newTrackList = [...trackList];
+
+      for (const track of tracksToResolve) {
+        try {
+          const seriesId = track.seriesId!;
+          const result = await apiService.getSeriesById(seriesId);
+          const seriesMsgs = result.messages || [];
+          
+          const foundInSeries = seriesMsgs.find(m => String(m.messageId) === String(track.messageId));
+          if (foundInSeries && foundInSeries.originalTrackNumber) {
+            const idx = newTrackList.findIndex(t => String(t.messageId) === String(track.messageId));
+            if (idx !== -1) {
+              newTrackList[idx] = {
+                ...newTrackList[idx],
+                originalTrackNumber: foundInSeries.originalTrackNumber,
+              };
+              updated = true;
+            }
+          }
+        } catch (e) {
+          console.warn('Error resolving track number in background:', e);
+        }
+      }
+
+      if (active && updated) {
+        setTrackList(newTrackList);
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(newTrackList)).catch(() => {});
+
+        if (currentTrack && currentTrack.seriesId && !currentTrack.originalTrackNumber) {
+          const matchingCurrent = newTrackList.find(t => String(t.messageId) === String(currentTrack.messageId));
+          if (matchingCurrent && matchingCurrent.originalTrackNumber) {
+            setCurrentTrack(matchingCurrent);
+            AsyncStorage.setItem('SOF_LAST_PLAYED_TRACK', JSON.stringify(matchingCurrent)).catch(() => {});
+          }
+        }
+      }
+    };
+
+    resolveTrackNumbers();
+    return () => {
+      active = false;
+    };
+  }, [trackList, currentTrack?.messageId]);
+
+  // Background resolver for missing downloaded series track numbers and series names
+  useEffect(() => {
+    let active = true;
+    const resolveDownloadedMetadata = async () => {
+      const tracksToResolve = downloadedTracks.filter(t => t.seriesId && (!t.originalTrackNumber || !t.seriesName));
+      if (tracksToResolve.length === 0) return;
+
+      let updated = false;
+      const newDownloads = [...downloadedTracks];
+
+      let allSeries: any[] = [];
+      try {
+        allSeries = await apiService.getAllSeries();
+      } catch (e) {}
+
+      for (const track of tracksToResolve) {
+        try {
+          const seriesId = track.seriesId!;
+          let seriesName = track.seriesName;
+          if (!seriesName) {
+            const matchedSeries = allSeries.find(s => String(s.seriesId) === String(seriesId));
+            if (matchedSeries) {
+              seriesName = matchedSeries.seriesName;
+            }
+          }
+
+          const result = await apiService.getSeriesById(seriesId);
+          const seriesMsgs = result.messages || [];
+          
+          if (!seriesName && result.series?.seriesName) {
+            seriesName = result.series.seriesName;
+          }
+
+          const foundInSeries = seriesMsgs.find(m => String(m.messageId) === String(track.messageId));
+          const originalTrackNumber = foundInSeries?.originalTrackNumber || track.originalTrackNumber;
+
+          const idx = newDownloads.findIndex(t => String(t.messageId) === String(track.messageId));
+          if (idx !== -1) {
+            const currentItem = newDownloads[idx];
+            if (currentItem.originalTrackNumber !== originalTrackNumber || currentItem.seriesName !== seriesName) {
+              newDownloads[idx] = {
+                ...currentItem,
+                originalTrackNumber,
+                seriesName,
+              };
+              updated = true;
+            }
+          }
+        } catch (e) {
+          console.warn('Error resolving download metadata in background:', e);
+        }
+      }
+
+      if (active && updated) {
+        setDownloadedTracks(newDownloads);
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.setItem('SOF_DOWNLOADED_REGISTRY', JSON.stringify(newDownloads)).catch(() => {});
+      }
+    };
+
+    const timer = setTimeout(() => {
+      resolveDownloadedMetadata();
+    }, 3000);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [downloadedTracks.length]);
 
   const setResumeFromStopped = async (value: boolean) => {
     setResumeFromStoppedState(value);

@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
-import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
   Play,
@@ -179,6 +179,125 @@ export default function AudioPlayer() {
   const [showOfflineMenu, setShowOfflineMenu] = useState(false);
 
   const pan = useRef(new Animated.ValueXY()).current;
+  const fullPlayerTranslateY = useRef(new Animated.Value(0)).current;
+  const dismissTimeoutRef = useRef<any>(null);
+
+  // Sync showQueueModal to a ref so PanResponder can access it
+  const showQueueModalRef = useRef(showQueueModal);
+  useEffect(() => {
+    showQueueModalRef.current = showQueueModal;
+  }, [showQueueModal]);
+  
+  const queueTranslateY = useRef(new Animated.Value(0)).current;
+  const queueScrollY = useRef(0);
+
+  const queuePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => {
+        // Only capture vertical downward drags (dy > 10) when list is at top
+        if (gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx)) {
+          return queueScrollY.current <= 0;
+        }
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (_evt, gestureState) => {
+        // Only capture vertical downward drags (dy > 10) when list is at top
+        if (gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx)) {
+          return queueScrollY.current <= 0;
+        }
+        return false;
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        // Only allow dragging downward (clamp at 0)
+        if (gestureState.dy > 0) {
+          queueTranslateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 80 || gestureState.vy > 0.5) {
+          // Swipe threshold met — close queue
+          Animated.timing(queueTranslateY, {
+            toValue: height, 
+            duration: 250,
+            useNativeDriver: true,
+          }).start(() => {
+            setShowQueueModal(false);
+            queueTranslateY.setValue(0);
+          });
+        } else {
+          // Snap back
+          Animated.spring(queueTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 40,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  const fullPlayerPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => {
+        // Ignore if queue modal is open to prevent full player from closing
+        if (showQueueModalRef.current) return false;
+
+        // Only capture vertical downward drags (dy > 10) and ignore horizontal swipes
+        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onMoveShouldSetPanResponderCapture: (_evt, gestureState) => {
+        // Ignore if queue modal is open to prevent full player from closing
+        if (showQueueModalRef.current) return false;
+
+        // Only capture vertical downward drags (dy > 10) and ignore horizontal swipes
+        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        // Only allow dragging downward (clamp at 0)
+        if (gestureState.dy > 0) {
+          fullPlayerTranslateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
+          // Swipe threshold met — animate out and close
+          Animated.timing(fullPlayerTranslateY, {
+            toValue: height,
+            duration: 250,
+            useNativeDriver: true,
+          }).start(() => {
+            setExpanded(false);
+            dismissTimeoutRef.current = setTimeout(() => {
+              fullPlayerTranslateY.setValue(0);
+              dismissTimeoutRef.current = null;
+            }, 600);
+          });
+        } else {
+          // Snap back
+          Animated.spring(fullPlayerTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 40,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  // Reset full player translateY when it is expanded (opened)
+  useEffect(() => {
+    if (expanded) {
+      if (dismissTimeoutRef.current) {
+        clearTimeout(dismissTimeoutRef.current);
+        dismissTimeoutRef.current = null;
+      }
+      fullPlayerTranslateY.setValue(0);
+    }
+  }, [expanded]);
 
   // Enforce correct visibility state when track/playback changes
   useEffect(() => {
@@ -302,14 +421,54 @@ export default function AudioPlayer() {
 
     const progress = duration > 0 ? position / duration : 0;
 
-    // Handle Seekbar interaction
-    const handleSeekPress = (event: any) => {
-      const clickX = event.nativeEvent.locationX;
-      const barWidth = width - 80; // horizontal padding margin
-      const clickRatio = Math.max(0, Math.min(1, clickX / barWidth));
-      const targetMs = clickRatio * duration;
-      seek(targetMs);
-    };
+    const [isDraggingSeek, setIsDraggingSeek] = useState(false);
+    const [dragProgress, setDragProgress] = useState(0);
+
+    const durationRef = useRef(duration);
+    useEffect(() => {
+      durationRef.current = duration;
+    }, [duration]);
+
+    const seekbarPanResponder = useRef(
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          setIsDraggingSeek(true);
+          const touchX = evt.nativeEvent.pageX;
+          const barWidth = width - 80;
+          const trackLeft = 40;
+          const relativeX = touchX - trackLeft;
+          const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
+          setDragProgress(ratio);
+        },
+        onPanResponderMove: (evt) => {
+          const touchX = evt.nativeEvent.pageX;
+          const barWidth = width - 80;
+          const trackLeft = 40;
+          const relativeX = touchX - trackLeft;
+          const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
+          setDragProgress(ratio);
+        },
+        onPanResponderRelease: (evt) => {
+          const touchX = evt.nativeEvent.pageX;
+          const barWidth = width - 80;
+          const trackLeft = 40;
+          const relativeX = touchX - trackLeft;
+          const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
+          
+          const targetMs = ratio * durationRef.current;
+          seek(targetMs);
+          setIsDraggingSeek(false);
+        },
+        onPanResponderTerminate: () => {
+          setIsDraggingSeek(false);
+        }
+      })
+    ).current;
+
+    const currentProgress = isDraggingSeek ? dragProgress : progress;
+    const currentPosition = isDraggingSeek ? dragProgress * duration : position;
 
     const handleSkipBack = () => {
       const target = Math.max(0, position - (skipInterval * 1000));
@@ -332,10 +491,14 @@ export default function AudioPlayer() {
         {/* FLOATING GLASSMORPHIC MINI PLAYER BAR */}
         {!expanded && resolvedState === 'full' && (
           <AnimatedBlurView
-            intensity={75}
+            intensity={Platform.OS === 'android' ? 0 : 75}
             tint={colorScheme === 'dark' ? 'dark' : 'light'}
             style={[
-              { backgroundColor: 'transparent' },
+              { 
+                backgroundColor: Platform.OS === 'android'
+                  ? (activeScheme === 'dark' ? 'rgba(3, 7, 24, 0.65)' : 'rgba(240, 246, 255, 0.65)')
+                  : 'transparent' 
+              },
               styles.miniPlayer,
               {
                 borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(27, 84, 164, 0.08)',
@@ -355,8 +518,9 @@ export default function AudioPlayer() {
             >
               {/* Native blur backdrop for real glassmorphism */}
               <BlurView
-                intensity={activeScheme === 'dark' ? 70 : 90}
+                intensity={Platform.OS === 'android' ? (activeScheme === 'dark' ? 65 : 85) : (activeScheme === 'dark' ? 70 : 90)}
                 tint={activeScheme === 'dark' ? 'dark' : 'light'}
+                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                 style={StyleSheet.absoluteFillObject}
               />
 
@@ -403,7 +567,7 @@ export default function AudioPlayer() {
                     {currentTrack.title}
                   </Text>
                   <Text style={[styles.miniSpeaker, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                    {currentTrack.speaker}
+                    {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
                   </Text>
                   
                   {/* Progress bar directly below speaker text */}
@@ -479,10 +643,17 @@ export default function AudioPlayer() {
         <Modal
           visible={expanded}
           animationType="slide"
-          presentationStyle="fullScreen"
+          transparent={true}
+          presentationStyle="overFullScreen"
           onRequestClose={() => setExpanded(false)}
         >
-          <View style={styles.fullContainer}>
+          <Animated.View
+            style={[
+              styles.fullContainer,
+              { transform: [{ translateY: fullPlayerTranslateY }] },
+            ]}
+            {...fullPlayerPanResponder.panHandlers}
+          >
             {/* BACKGROUND BLUR OR BRAND GRADIENT */}
             {currentTrack.coverUrl ? (
               <>
@@ -502,7 +673,11 @@ export default function AudioPlayer() {
               />
             )}
 
-            <SafeAreaView style={styles.safeArea}>
+            <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom || 16 }]}>
+              {/* Swipe indicator pill */}
+              <View style={styles.swipeIndicatorContainer}>
+                <View style={styles.swipeIndicatorPill} />
+              </View>
               {/* Header */}
               <View style={styles.fullHeader}>
                 <TouchableOpacity onPress={() => setExpanded(false)} style={styles.closeBtn}>
@@ -559,7 +734,7 @@ export default function AudioPlayer() {
                   {currentTrack.title}
                 </Text>
                 <Text style={styles.trackSpeaker}>
-                  {currentTrack.speaker}
+                  {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
                 </Text>
               </View>
 
@@ -575,27 +750,28 @@ export default function AudioPlayer() {
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={handleSeekPress}
-                  style={styles.seekbarTrack}
+                <View
+                  style={{ height: 30, justifyContent: 'center' }}
+                  {...seekbarPanResponder.panHandlers}
                 >
-                  <View
-                    style={[
-                      styles.seekbarFill,
-                      { width: `${progress * 100}%` },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.seekbarThumb,
-                      { left: `${progress * 98}%` },
-                    ]}
-                  />
-                </TouchableOpacity>
+                  <View style={styles.seekbarTrack}>
+                    <View
+                      style={[
+                        styles.seekbarFill,
+                        { width: `${currentProgress * 100}%` },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.seekbarThumb,
+                        { left: `${currentProgress * 98}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
                 <View style={styles.timestampsRow}>
                   <Text style={styles.timestampText}>
-                    {formatTime(position)}
+                    {formatTime(currentPosition)}
                   </Text>
                   <Text style={styles.timestampText}>
                     {formatTime(duration)}
@@ -725,8 +901,8 @@ export default function AudioPlayer() {
                   <SkipForward size={26} color="#ffffff" fill="#ffffff" />
                 </TouchableOpacity>
               </View>
-            </SafeAreaView>
-            
+            </View>
+
             {showSkipMenu && (
               <View style={StyleSheet.absoluteFillObject}>
                 <Pressable
@@ -832,107 +1008,112 @@ export default function AudioPlayer() {
                 </View>
               </View>
             )}
-          </View>
-        </Modal>
-
-        {/* QUEUE OVERLAY MODAL */}
-        <Modal
-          visible={showQueueModal}
-          animationType="slide"
-          presentationStyle="overFullScreen"
-          transparent={true}
-          onRequestClose={() => setShowQueueModal(false)}
-        >
-          <View style={styles.queueOverlayContainer}>
-            <TouchableOpacity 
-              style={styles.queueOverlayBackdrop} 
-              activeOpacity={1} 
-              onPress={() => setShowQueueModal(false)} 
-            />
-            <View style={[styles.queueModalContent, { backgroundColor: activeScheme === 'dark' ? '#0f172a' : '#f8fafc' }]}>
-              {/* Header */}
-              <View style={styles.queueHeader}>
-                <Text style={[styles.queueTitle, { color: themeColors.text }]}>Playback Queue</Text>
-                <TouchableOpacity onPress={() => setShowQueueModal(false)} style={styles.queueCloseBtn}>
-                  <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 16 }}>Done</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* List */}
-              <FlatList
-                data={trackList}
-                keyExtractor={(item, idx) => `${item.messageId}-${idx}`}
-                renderItem={({ item, index }) => {
-                  const isCurrent = currentTrack && String(item.messageId) === String(currentTrack.messageId);
-                  return (
-                    <View style={[
-                      styles.queueItem,
-                      isCurrent && { backgroundColor: activeScheme === 'dark' ? 'rgba(30, 41, 59, 0.6)' : 'rgba(219, 234, 254, 0.6)' }
-                    ]}>
-                      <TouchableOpacity 
-                        style={styles.queueItemTrackInfo}
-                        onPress={() => playTrack(item, trackList)}
-                      >
-                        {item.coverUrl ? (
-                          <Image source={{ uri: item.coverUrl }} style={styles.queueItemArtwork} />
-                        ) : (
-                          <View style={[styles.queueItemArtworkPlaceholder, { backgroundColor: themeColors.primary }]}>
-                            <Music size={12} color="#ffffff" />
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text 
-                            style={[
-                              styles.queueItemTitle, 
-                              { color: isCurrent ? themeColors.primary : themeColors.text },
-                              isCurrent && { fontWeight: 'bold' }
-                            ]} 
-                            numberOfLines={1}
-                          >
-                            {item.title}
-                          </Text>
-                          <Text style={[styles.queueItemSpeaker, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                            {item.speaker}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Reorder / Remove Controls */}
-                      <View style={styles.queueItemControls}>
-                        <TouchableOpacity 
-                          onPress={() => reorderQueue(index, 'up')} 
-                          disabled={index === 0}
-                          style={[styles.reorderBtn, index === 0 && { opacity: 0.3 }]}
-                        >
-                          <ArrowUp size={16} color={themeColors.text} />
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          onPress={() => reorderQueue(index, 'down')} 
-                          disabled={index === trackList.length - 1}
-                          style={[styles.reorderBtn, index === trackList.length - 1 && { opacity: 0.3 }]}
-                        >
-                          <ArrowDown size={16} color={themeColors.text} />
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          onPress={() => removeFromQueue(item.messageId)}
-                          disabled={isCurrent}
-                          style={[styles.removeBtn, isCurrent && { opacity: 0.3 }]}
-                        >
-                          <Trash2 size={16} color="#ef4444" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                }}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                ListEmptyComponent={
-                  <View style={{ padding: 40, alignItems: 'center' }}>
-                    <Text style={{ color: themeColors.textSecondary }}>No tracks in queue</Text>
+            {/* QUEUE OVERLAY (inline, not a separate Modal) */}
+            {showQueueModal && (
+              <View style={[StyleSheet.absoluteFillObject, { zIndex: 50, justifyContent: 'flex-end' }]}>  
+                <TouchableOpacity 
+                  style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.5)' }]} 
+                  activeOpacity={1} 
+                  onPress={() => setShowQueueModal(false)} 
+                />
+                <Animated.View 
+                  style={[styles.queueModalContent, { backgroundColor: activeScheme === 'dark' ? '#0f172a' : '#f8fafc', transform: [{ translateY: queueTranslateY }] }]}
+                  {...queuePanResponder.panHandlers}
+                >
+                  {/* Header */}
+                  <View style={styles.queueHeader}>
+                    <Text style={[styles.queueTitle, { color: themeColors.text }]}>Playback Queue</Text>
+                    <TouchableOpacity onPress={() => setShowQueueModal(false)} style={styles.queueCloseBtn}>
+                      <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 16 }}>Done</Text>
+                    </TouchableOpacity>
                   </View>
-                }
-              />
-            </View>
-          </View>
+
+                  {/* List */}
+                  <FlatList
+                    onScroll={(e) => { queueScrollY.current = e.nativeEvent.contentOffset.y; }}
+                    scrollEventThrottle={16}
+                    data={trackList}
+                    keyExtractor={(item, idx) => `${item.messageId}-${idx}`}
+                    renderItem={({ item, index }) => {
+                      const isCurrent = currentTrack && String(item.messageId) === String(currentTrack.messageId);
+                      return (
+                        <View style={[
+                          styles.queueItem,
+                          isCurrent && { backgroundColor: activeScheme === 'dark' ? 'rgba(30, 41, 59, 0.6)' : 'rgba(219, 234, 254, 0.6)' }
+                        ]}>
+                          <TouchableOpacity 
+                            style={styles.queueItemTrackInfo}
+                            onPress={() => playTrack(item, trackList)}
+                          >
+                            <Text style={[
+                              styles.queueItemNumber, 
+                              { color: isCurrent ? themeColors.primary : themeColors.textSecondary },
+                              isCurrent && { fontWeight: 'bold' }
+                            ]}>
+                              {index + 1}
+                            </Text>
+                            {item.coverUrl ? (
+                              <Image source={{ uri: item.coverUrl }} style={styles.queueItemArtwork} />
+                            ) : (
+                              <View style={[styles.queueItemArtworkPlaceholder, { backgroundColor: themeColors.primary }]}>
+                                <Music size={12} color="#ffffff" />
+                              </View>
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <Text 
+                                style={[
+                                  styles.queueItemTitle, 
+                                  { color: isCurrent ? themeColors.primary : themeColors.text },
+                                  isCurrent && { fontWeight: 'bold' }
+                                ]} 
+                                numberOfLines={1}
+                              >
+                                {item.title}
+                              </Text>
+                              <Text style={[styles.queueItemSpeaker, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                                {item.originalTrackNumber ? `Track ${item.originalTrackNumber} • ` : ''}{item.speaker}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+
+                          {/* Reorder / Remove Controls */}
+                          <View style={styles.queueItemControls}>
+                            <TouchableOpacity 
+                              onPress={() => reorderQueue(index, 'up')} 
+                              disabled={index === 0}
+                              style={[styles.reorderBtn, index === 0 && { opacity: 0.3 }]}
+                            >
+                              <ArrowUp size={16} color={themeColors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              onPress={() => reorderQueue(index, 'down')} 
+                              disabled={index === trackList.length - 1}
+                              style={[styles.reorderBtn, index === trackList.length - 1 && { opacity: 0.3 }]}
+                            >
+                              <ArrowDown size={16} color={themeColors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              onPress={() => removeFromQueue(item.messageId)}
+                              disabled={isCurrent}
+                              style={[styles.removeBtn, isCurrent && { opacity: 0.3 }]}
+                            >
+                              <Trash2 size={16} color="#ef4444" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    }}
+                    contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}
+                    ListEmptyComponent={
+                      <View style={{ padding: 40, alignItems: 'center' }}>
+                        <Text style={{ color: themeColors.textSecondary }}>No tracks in queue</Text>
+                      </View>
+                    }
+                  />
+                </Animated.View>
+              </View>
+            )}
+          </Animated.View>
         </Modal>
 
         {/* TRACK OPTIONS BOTTOM ACTION SHEET */}
@@ -1232,13 +1413,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
   },
+  swipeIndicatorContainer: {
+    paddingTop: 8,
+    paddingBottom: 4,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  swipeIndicatorPill: {
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  },
   fullHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    marginTop: Platform.OS === 'ios' ? 0 : 36, // avoid overlapping status bar on Android
   },
   closeBtn: {
     padding: 8,
@@ -1593,7 +1785,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   queueModalContent: {
-    height: '80%',
+    maxHeight: '70%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',
@@ -1627,6 +1819,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderColor: 'rgba(156, 163, 175, 0.08)',
+  },
+  queueItemNumber: {
+    fontSize: 13,
+    fontWeight: '500',
+    width: 20,
+    textAlign: 'center',
   },
   queueItemTrackInfo: {
     flex: 1,

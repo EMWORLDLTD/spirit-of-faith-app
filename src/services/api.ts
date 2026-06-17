@@ -34,6 +34,7 @@ export interface Message {
   viewsCount?: number;
   downloadsCount?: number;
   categoryIds?: (string | number)[];
+  originalTrackNumber?: number;
 }
 
 export interface Devotional {
@@ -84,9 +85,20 @@ const mapDevotional = (d: any): Devotional => {
   };
 };
 
+// Memory caches for API responses to speed up screen rendering and prevent redundant loads
+let cachedTodaysDevotional: Devotional | null = null;
+let cachedUpcomingEvents: ChurchEvent[] | null = null;
+let cachedCategories: Category[] | null = null;
+let cachedAllSeries: Series[] | null = null;
+let cachedRecentMessages: Message[] | null = null;
+let cachedSeriesById: Record<string, { series: Series; messages: Message[] }> = {};
+
 export const apiService = {
   // DEVOTIONALS
-  getTodaysDevotional: async (): Promise<Devotional | null> => {
+  getTodaysDevotional: async (forceRefresh = false): Promise<Devotional | null> => {
+    if (!forceRefresh && cachedTodaysDevotional) {
+      return cachedTodaysDevotional;
+    }
     const today = new Date();
     const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     try {
@@ -96,7 +108,9 @@ export const apiService = {
         data = data[0];
       }
       if (data && data.title) {
-        return mapDevotional(data);
+        const mapped = mapDevotional(data);
+        cachedTodaysDevotional = mapped;
+        return mapped;
       }
       return null;
     } catch (error) {
@@ -129,7 +143,10 @@ export const apiService = {
   },
 
   // TEACHINGS / SERMONS
-  getRecentMessages: async (limit: number = 10): Promise<Message[]> => {
+  getRecentMessages: async (limit: number = 10, forceRefresh = false): Promise<Message[]> => {
+    if (!forceRefresh && cachedRecentMessages) {
+      return cachedRecentMessages.slice(0, limit);
+    }
     try {
       const response = await apiClient.get<any>('/messages');
       const messagesList = Array.isArray(response.data) ? response.data : (response.data?.data || []);
@@ -160,6 +177,7 @@ export const apiService = {
           uniqueMapped.push(m);
         }
       }
+      cachedRecentMessages = uniqueMapped;
       return uniqueMapped.slice(0, limit);
     } catch (error) {
       console.warn('Error fetching recent messages:', error);
@@ -225,14 +243,19 @@ export const apiService = {
     }
   },
 
-  getCategories: async (): Promise<Category[]> => {
+  getCategories: async (forceRefresh = false): Promise<Category[]> => {
+    if (!forceRefresh && cachedCategories) {
+      return cachedCategories;
+    }
     try {
       const response = await apiClient.get<any>('/categories');
       const rawData = response.data?.data || response.data || [];
-      return rawData.map((c: any) => ({
+      const mapped = rawData.map((c: any) => ({
         categoryId: c.id || c.categoryId,
         categoryName: c.name || c.categoryName || '',
       }));
+      cachedCategories = mapped;
+      return mapped;
     } catch (error) {
       console.warn('Error fetching categories:', error);
       return [];
@@ -256,16 +279,21 @@ export const apiService = {
   },
 
   // SERIES
-  getAllSeries: async (): Promise<Series[]> => {
+  getAllSeries: async (forceRefresh = false): Promise<Series[]> => {
+    if (!forceRefresh && cachedAllSeries) {
+      return cachedAllSeries;
+    }
     try {
       const response = await apiClient.get<any>('/series');
       const list = response.data?.data || response.data || [];
-      return list.map((s: any) => ({
+      const mapped = list.map((s: any) => ({
         seriesId: s.id || s.seriesId,
         seriesName: s.name || s.seriesName || '',
         seriesCoverUrl: s.coverUrl || s.seriesCoverUrl || '',
         publishedMessagesCount: s.publishedMessagesCount || (s.messages ? s.messages.length : 0),
       }));
+      cachedAllSeries = mapped;
+      return mapped;
     } catch (error) {
       console.warn('Error fetching all series:', error);
       return [];
@@ -292,7 +320,11 @@ export const apiService = {
     };
   },
 
-  getSeriesById: async (id: string | number): Promise<{ series: Series; messages: Message[] }> => {
+  getSeriesById: async (id: string | number, forceRefresh = false): Promise<{ series: Series; messages: Message[] }> => {
+    const cacheKey = String(id);
+    if (!forceRefresh && cachedSeriesById[cacheKey]) {
+      return cachedSeriesById[cacheKey];
+    }
     try {
       const [seriesRes, messagesRes] = await Promise.all([
         apiClient.get<any>(`/series/${id}`),
@@ -308,6 +340,7 @@ export const apiService = {
         duration: m.duration || undefined,
         publishedDate: m.messageDate || m.createdAt,
         seriesId: m.seriesId || id,
+        seriesName: seriesData.name || seriesData.seriesName || '',
         coverUrl: m.coverUrl || seriesData.coverUrl || seriesData.seriesCoverUrl || '',
         viewsCount: m.viewsCount || 0,
         downloadsCount: m.downloadsCount || 0,
@@ -324,15 +357,22 @@ export const apiService = {
         }
       }
 
-      return {
+      const messagesWithTrackNum = uniqueMessages.map((m, idx) => ({
+        ...m,
+        originalTrackNumber: idx + 1,
+      }));
+
+      const result = {
         series: {
           seriesId: seriesData.id || seriesData.seriesId || id,
           seriesName: seriesData.name || seriesData.seriesName || '',
           seriesCoverUrl: seriesData.coverUrl || seriesData.seriesCoverUrl || '',
           publishedMessagesCount: seriesData.publishedMessagesCount || uniqueMessages.length || 0,
         },
-        messages: uniqueMessages,
+        messages: messagesWithTrackNum,
       };
+      cachedSeriesById[cacheKey] = result;
+      return result;
     } catch (error) {
       console.warn('Error fetching series by id:', error);
       // Fallback: fetch series from metadata only
@@ -362,11 +402,14 @@ export const apiService = {
   },
 
   // EVENTS
-  getUpcomingEvents: async (): Promise<ChurchEvent[]> => {
+  getUpcomingEvents: async (forceRefresh = false): Promise<ChurchEvent[]> => {
+    if (!forceRefresh && cachedUpcomingEvents) {
+      return cachedUpcomingEvents;
+    }
     try {
       const response = await apiClient.get<any>('/events/events');
       const events = response.data?.events || response.data?.data || response.data || [];
-      return events.map((evt: any) => ({
+      const mapped = events.map((evt: any) => ({
         eventId: evt.eventId,
         title: evt.title,
         description: evt.description,
@@ -376,6 +419,8 @@ export const apiService = {
         bannerImageUrl: evt.bannerImageUrl,
         isPublished: evt.isPublished || false,
       }));
+      cachedUpcomingEvents = mapped;
+      return mapped;
     } catch (error) {
       console.warn('Error fetching upcoming events:', error);
       return [];
@@ -436,6 +481,15 @@ export const apiService = {
     } catch (error) {
       console.warn('Error fetching event sessions:', error);
       return [];
+    }
+  },
+
+  preloadAllCaches: async (): Promise<void> => {
+    try {
+      // Fetch categories (the only main endpoint not loaded by Home Screen on start)
+      apiService.getCategories().catch(() => {});
+    } catch (e) {
+      console.warn('Preload categories failed:', e);
     }
   },
 };

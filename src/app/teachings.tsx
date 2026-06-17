@@ -135,7 +135,6 @@ const TrackListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulse
 );
 
 let teachingsMainCache: { categories: Category[]; seriesList: ExtendedSeries[] } | null = null;
-const seriesTracksCache: Record<string, Message[]> = {};
 
 export default function TeachingsScreen() {
   const systemScheme = useColorScheme();
@@ -296,9 +295,9 @@ export default function TeachingsScreen() {
     setSeriesLoading(true);
     try {
       const [categoriesData, seriesData, messagesData] = await Promise.all([
-        apiService.getCategories(),
-        apiService.getAllSeries(),
-        apiService.getRecentMessages(100), // Get all messages to count tracks
+        apiService.getCategories(forceRefresh),
+        apiService.getAllSeries(forceRefresh),
+        apiService.getRecentMessages(100, forceRefresh), // Get all messages to count tracks
       ]);
 
       // Calculate track counts, speaker, and category tags dynamically
@@ -333,18 +332,11 @@ export default function TeachingsScreen() {
 
   const handleSelectSeries = async (series: Series, forceRefresh = false) => {
     setSelectedSeries(series);
-    const cacheKey = String(series.seriesId);
-    if (!forceRefresh && seriesTracksCache[cacheKey]) {
-      setSeriesMessages(seriesTracksCache[cacheKey]);
-      setMessagesLoading(false);
-      return;
-    }
     setMessagesLoading(true);
     try {
-      const result = await apiService.getSeriesById(series.seriesId);
+      const result = await apiService.getSeriesById(series.seriesId, forceRefresh);
       const messages = result.messages || [];
       setSeriesMessages(messages);
-      seriesTracksCache[cacheKey] = messages;
     } catch (error) {
       console.error('Error fetching series messages:', error);
     } finally {
