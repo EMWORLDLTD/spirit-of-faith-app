@@ -93,6 +93,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const savedPositionsRef = useRef<Record<string, number>>({});
   const lastSavedTimeRef = useRef<number>(0);
 
+  const repeatModeRef = useRef<'off' | 'all' | 'one'>('off');
+  const playNextRef = useRef<() => Promise<void>>(async () => {});
+  const playPreviousRef = useRef<() => Promise<void>>(async () => {});
+
   // Load favorites, playlist & theme mode on mount
   useEffect(() => {
     const loadPersistedData = async () => {
@@ -476,11 +480,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // If track finishes, automatically play the next one
         if (status.didJustFinish) {
-          if (repeatMode === 'one') {
+          if (repeatModeRef.current === 'one') {
             player.seekTo(0).then(() => player.play()).catch(() => {});
             return;
           }
-          playNext();
+          playNextRef.current();
         }
       });
 
@@ -580,6 +584,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Sync refs to prevent stale closures in event listeners
+  useEffect(() => {
+    repeatModeRef.current = repeatMode;
+  }, [repeatMode]);
+
+  useEffect(() => {
+    playNextRef.current = playNext;
+    playPreviousRef.current = playPrevious;
+  }); // runs on every render to ensure latest values are captured
+
   const toggleFavorite = async (track: Message) => {
     const isFav = favorites.some(t => String(t.messageId) === String(track.messageId));
     let nextFavs: Message[];
@@ -646,7 +660,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addToQueue = (track: Message) => {
     setTrackList(prev => {
       if (prev.some(t => String(t.messageId) === String(track.messageId))) return prev;
-      return [...prev, track];
+      const nextList = [...prev, track];
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(nextList)).catch(() => {});
+      return nextList;
     });
   };
 
@@ -655,16 +672,24 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Remove it from current list position
       const filtered = prev.filter(t => String(t.messageId) !== String(track.messageId));
       if (!currentTrack) {
-        return [track];
+        const nextList = [track];
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(nextList)).catch(() => {});
+        return nextList;
       }
       // Locate active track index
       const currentIndex = filtered.findIndex(t => String(t.messageId) === String(currentTrack.messageId));
       if (currentIndex === -1) {
-        return [...filtered, track];
+        const nextList = [...filtered, track];
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(nextList)).catch(() => {});
+        return nextList;
       }
       const nextList = [...filtered];
       // Splice immediately after the active track
       nextList.splice(currentIndex + 1, 0, track);
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(nextList)).catch(() => {});
       return nextList;
     });
   };
@@ -678,10 +703,18 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     nextList[index] = nextList[targetIndex];
     nextList[targetIndex] = temp;
     setTrackList(nextList);
+
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(nextList)).catch(() => {});
   };
 
   const removeFromQueue = (trackId: string | number) => {
-    setTrackList(prev => prev.filter(t => String(t.messageId) !== String(trackId)));
+    setTrackList(prev => {
+      const nextList = prev.filter(t => String(t.messageId) !== String(trackId));
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(nextList)).catch(() => {});
+      return nextList;
+    });
   };
 
   // Long-Press Actions
