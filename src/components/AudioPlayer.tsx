@@ -359,6 +359,52 @@ export default function AudioPlayer() {
     })
   ).current;
 
+  const [isDraggingSeek, setIsDraggingSeek] = useState(false);
+  const [dragProgress, setDragProgress] = useState(0);
+
+  const durationRef = useRef(duration);
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  const seekbarPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        setIsDraggingSeek(true);
+        const touchX = evt.nativeEvent.pageX;
+        const barWidth = width - 80;
+        const trackLeft = 40;
+        const relativeX = touchX - trackLeft;
+        const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
+        setDragProgress(ratio);
+      },
+      onPanResponderMove: (evt) => {
+        const touchX = evt.nativeEvent.pageX;
+        const barWidth = width - 80;
+        const trackLeft = 40;
+        const relativeX = touchX - trackLeft;
+        const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
+        setDragProgress(ratio);
+      },
+      onPanResponderRelease: (evt) => {
+        const touchX = evt.nativeEvent.pageX;
+        const barWidth = width - 80;
+        const trackLeft = 40;
+        const relativeX = touchX - trackLeft;
+        const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
+        
+        const targetMs = ratio * durationRef.current;
+        seek(targetMs);
+        setIsDraggingSeek(false);
+      },
+      onPanResponderTerminate: () => {
+        setIsDraggingSeek(false);
+      }
+    })
+  ).current;
+
   // Determine active theme colors based on theme settings
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
   const themeColors = Colors[activeScheme === 'dark' ? 'dark' : 'light'];
@@ -420,52 +466,6 @@ export default function AudioPlayer() {
     }
 
     const progress = duration > 0 ? position / duration : 0;
-
-    const [isDraggingSeek, setIsDraggingSeek] = useState(false);
-    const [dragProgress, setDragProgress] = useState(0);
-
-    const durationRef = useRef(duration);
-    useEffect(() => {
-      durationRef.current = duration;
-    }, [duration]);
-
-    const seekbarPanResponder = useRef(
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (evt) => {
-          setIsDraggingSeek(true);
-          const touchX = evt.nativeEvent.pageX;
-          const barWidth = width - 80;
-          const trackLeft = 40;
-          const relativeX = touchX - trackLeft;
-          const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
-          setDragProgress(ratio);
-        },
-        onPanResponderMove: (evt) => {
-          const touchX = evt.nativeEvent.pageX;
-          const barWidth = width - 80;
-          const trackLeft = 40;
-          const relativeX = touchX - trackLeft;
-          const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
-          setDragProgress(ratio);
-        },
-        onPanResponderRelease: (evt) => {
-          const touchX = evt.nativeEvent.pageX;
-          const barWidth = width - 80;
-          const trackLeft = 40;
-          const relativeX = touchX - trackLeft;
-          const ratio = Math.max(0, Math.min(1, relativeX / barWidth));
-          
-          const targetMs = ratio * durationRef.current;
-          seek(targetMs);
-          setIsDraggingSeek(false);
-        },
-        onPanResponderTerminate: () => {
-          setIsDraggingSeek(false);
-        }
-      })
-    ).current;
 
     const currentProgress = isDraggingSeek ? dragProgress : progress;
     const currentPosition = isDraggingSeek ? dragProgress * duration : position;
@@ -773,21 +773,19 @@ export default function AudioPlayer() {
                   <Text style={styles.timestampText}>
                     {formatTime(currentPosition)}
                   </Text>
+                  {isBuffering && (
+                    <View style={styles.bufferingBox}>
+                      <ActivityIndicator size="small" color="#ffffff" style={{ transform: [{ scale: 0.8 }] }} />
+                      <Text style={styles.bufferingText}>
+                        Buffering...
+                      </Text>
+                    </View>
+                  )}
                   <Text style={styles.timestampText}>
                     {formatTime(duration)}
                   </Text>
                 </View>
               </View>
-
-              {/* Buffering Indicator */}
-              {isBuffering && (
-                <View style={styles.bufferingBox}>
-                  <ActivityIndicator size="small" color="#ffffff" />
-                  <Text style={styles.bufferingText}>
-                    Buffering...
-                  </Text>
-                </View>
-              )}
 
               {/* Unified Premium Actions Row */}
               <View style={styles.playerActionsRow}>
@@ -878,7 +876,9 @@ export default function AudioPlayer() {
                   onPress={handlePlayPause}
                   style={styles.playBtnContainer}
                 >
-                  {isPlaying ? (
+                  {isBuffering ? (
+                    <ActivityIndicator size="small" color="#002664" />
+                  ) : isPlaying ? (
                     <Pause size={28} color="#002664" fill="#002664" />
                   ) : (
                     <Play size={28} color="#002664" fill="#002664" style={{ marginLeft: 4 }} />
@@ -1580,13 +1580,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    height: 20,
-    marginTop: 6,
   },
   bufferingText: {
-    marginLeft: 8,
+    marginLeft: 6,
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
   },
   controlsRow: {
