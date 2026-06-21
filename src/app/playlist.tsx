@@ -77,7 +77,7 @@ export default function PlaylistScreen() {
             tint={activeScheme === 'dark' ? 'dark' : 'light'}
             style={StyleSheet.absoluteFillObject}
           />
-          <TouchableOpacity onPress={() => router.navigate('/more')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.navigate('/library')} style={styles.backBtn}>
             <ChevronLeft size={24} color={themeColors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: themeColors.text }]}>My Playlist</Text>

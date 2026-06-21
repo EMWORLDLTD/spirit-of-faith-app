@@ -142,16 +142,6 @@ export default function DevotionalsScreen() {
   const [historyDevotionals, setHistoryDevotionals] = useState<Devotional[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [isPulling, setIsPulling] = useState(false);
-
-  const handleScroll = (event: any) => {
-    const y = event.nativeEvent.contentOffset.y;
-    if (y < 0) {
-      if (!isPulling) setIsPulling(true);
-    } else {
-      if (isPulling) setIsPulling(false);
-    }
-  };
   const [showMenu, setShowMenu] = useState(false);
 
   const handleCopyDevotional = async (dev: Devotional) => {
@@ -421,7 +411,7 @@ export default function DevotionalsScreen() {
 
       {/* Floating Popover Menu */}
       {showMenu && activeDev && (
-        <View style={StyleSheet.absoluteFillObject}>
+        <View style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}>
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowMenu(false)} />
           <View style={[
             styles.popoverMenuContainer,
@@ -482,11 +472,17 @@ export default function DevotionalsScreen() {
             <DevotionalDetailSkeleton themeColors={themeColors} pulseAnim={pulseAnim} insets={insets} />
           ) : todayDevotional && todayDevotional.title && todayDevotional.content ? (
             <ScrollView 
-              contentContainerStyle={[styles.scrollContent, { paddingTop: 112 + insets.top, paddingBottom: 150 + insets.bottom }]} 
+              contentContainerStyle={[
+                styles.scrollContent, 
+                { 
+                  paddingTop: Platform.OS === 'android' ? 112 + insets.top : 0, 
+                  paddingBottom: 150 + insets.bottom 
+                }
+              ]} 
               showsVerticalScrollIndicator={false}
-              style={{ zIndex: isPulling ? 11 : 0 }}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
+              contentInset={Platform.OS === 'ios' ? { top: 112 + insets.top } : undefined}
+              contentOffset={Platform.OS === 'ios' ? { y: -(112 + insets.top), x: 0 } : undefined}
+              automaticallyAdjustContentInsets={false}
               refreshControl={
                 <RefreshControl 
                   refreshing={refreshing} 
@@ -557,7 +553,7 @@ export default function DevotionalsScreen() {
                   }
                 ]}>
                   <Text style={[styles.confessionTitle, { color: themeColors.primary }]}>
-                    {todayDevotional.confession ? 'CONFESSION / AFFIRMATION' : 'PRAYER'}
+                    {todayDevotional.confession ? 'CONFESSION / PRAYER' : 'PRAYER'}
                   </Text>
                   <Text style={[styles.confessionText, { color: themeColors.text }]}>
                     {todayDevotional.confession || todayDevotional.prayer}
@@ -640,7 +636,7 @@ export default function DevotionalsScreen() {
                   }
                 ]}>
                   <Text style={[styles.confessionTitle, { color: themeColors.primary }]}>
-                    {selectedDevotional.confession ? 'CONFESSION / AFFIRMATION' : 'PRAYER'}
+                    {selectedDevotional.confession ? 'CONFESSION / PRAYER' : 'PRAYER'}
                   </Text>
                   <Text style={[styles.confessionText, { color: themeColors.text }]}>
                     {selectedDevotional.confession || selectedDevotional.prayer}
@@ -908,6 +904,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontStyle: 'italic',
+    fontWeight: 'bold',
   },
   retryButton: {
     marginTop: 12,

@@ -165,16 +165,6 @@ export default function TeachingsScreen() {
   const [seriesMessages, setSeriesMessages] = useState<Message[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [isPulling, setIsPulling] = useState(false);
-
-  const handleScroll = (event: any) => {
-    const y = event.nativeEvent.contentOffset.y;
-    if (y < 0) {
-      if (!isPulling) setIsPulling(true);
-    } else {
-      if (isPulling) setIsPulling(false);
-    }
-  };
 
   const lastAutoSelectedRef = useRef<{ seriesId?: string; messageId?: string }>({});
 
@@ -442,11 +432,17 @@ export default function TeachingsScreen() {
       {selectedSeries ? (
         /* SERIES DETAIL VIEW */
         <ScrollView 
-          contentContainerStyle={[styles.scrollContent, { paddingTop: 56 + insets.top + 24, paddingBottom: 150 + insets.bottom }]} 
+          contentContainerStyle={[
+            styles.scrollContent, 
+            { 
+              paddingTop: Platform.OS === 'android' ? 56 + insets.top + 24 : 0, 
+              paddingBottom: 150 + insets.bottom 
+            }
+          ]} 
           showsVerticalScrollIndicator={false}
-          style={{ zIndex: isPulling ? 11 : 0 }}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
+          contentInset={Platform.OS === 'ios' ? { top: 56 + insets.top + 24 } : undefined}
+          contentOffset={Platform.OS === 'ios' ? { y: -(56 + insets.top + 24), x: 0 } : undefined}
+          automaticallyAdjustContentInsets={false}
           refreshControl={
             <RefreshControl 
               refreshing={refreshing} 
@@ -682,9 +678,9 @@ export default function TeachingsScreen() {
           ) : filteredSeries.length > 0 ? (
             <FlatList
               key={isGridView ? 'grid' : 'list'}
-              style={{ zIndex: isPulling ? 11 : 0 }}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
+              contentInset={Platform.OS === 'ios' ? { top: 140 + insets.top } : undefined}
+              contentOffset={Platform.OS === 'ios' ? { y: -(140 + insets.top), x: 0 } : undefined}
+              automaticallyAdjustContentInsets={false}
               refreshControl={
                 <RefreshControl 
                   refreshing={refreshing} 
@@ -698,7 +694,7 @@ export default function TeachingsScreen() {
               numColumns={isGridView ? 2 : 1}
               contentContainerStyle={[
                 isGridView ? styles.gridContainer : styles.listContainer, 
-                { paddingTop: 140 + insets.top, paddingBottom: 150 + insets.bottom }
+                { paddingTop: Platform.OS === 'android' ? 140 + insets.top : 0, paddingBottom: 150 + insets.bottom }
               ]}
               renderItem={({ item }) => isGridView ? (
                 <TouchableOpacity

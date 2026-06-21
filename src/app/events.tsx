@@ -6,13 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
   Dimensions,
   FlatList,
   Animated,
   RefreshControl,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiService, ChurchEvent, EventSession } from '../services/api';
 import { Colors } from '../constants/theme';
@@ -102,16 +102,6 @@ export default function EventsScreen() {
   const [sessions, setSessions] = useState<EventSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [isPulling, setIsPulling] = useState(false);
-
-  const handleScroll = (event: any) => {
-    const y = event.nativeEvent.contentOffset.y;
-    if (y < 0) {
-      if (!isPulling) setIsPulling(true);
-    } else {
-      if (isPulling) setIsPulling(false);
-    }
-  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -253,7 +243,6 @@ export default function EventsScreen() {
           <TouchableOpacity
             onPress={() => {
               setSelectedEvent(null);
-              setSessions([]);
               autoSelectedRef.current = null;
               try {
                 router.setParams({ eventId: undefined });
@@ -381,9 +370,9 @@ export default function EventsScreen() {
           ) : events.length > 0 ? (
              <FlatList
               data={events}
-              style={{ zIndex: isPulling ? 11 : 0 }}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
+              contentInset={Platform.OS === 'ios' ? { top: 72 + insets.top } : undefined}
+              contentOffset={Platform.OS === 'ios' ? { y: -(72 + insets.top), x: 0 } : undefined}
+              automaticallyAdjustContentInsets={false}
               refreshControl={
                 <RefreshControl 
                   refreshing={refreshing} 
@@ -393,7 +382,7 @@ export default function EventsScreen() {
                 />
               }
               keyExtractor={(item) => item.eventId.toString()}
-              contentContainerStyle={[styles.listContainer, { paddingTop: 72 + insets.top, paddingBottom: 150 + insets.bottom }]}
+              contentContainerStyle={[styles.listContainer, { paddingTop: Platform.OS === 'android' ? 72 + insets.top : 0, paddingBottom: 150 + insets.bottom }]}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[

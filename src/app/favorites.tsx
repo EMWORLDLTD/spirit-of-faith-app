@@ -61,7 +61,7 @@ export default function FavoritesScreen() {
         {/* Header */}
         <BlurHeader isDark={activeScheme === 'dark'}>
           <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 }}>
-            <TouchableOpacity onPress={() => router.navigate('/more')} style={styles.backBtn}>
+            <TouchableOpacity onPress={() => router.navigate('/library')} style={styles.backBtn}>
               <ChevronLeft size={24} color={themeColors.text} />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: themeColors.text }]}>My Favorites</Text>

@@ -72,15 +72,48 @@ export interface ChurchEvent {
 
 // Helper to map backend devotional object to UI Devotional interface
 const mapDevotional = (d: any): Devotional => {
+  let content = d.content || '';
+  let confession = d.confession || '';
+  let prayer = d.prayer || '';
+
+  // If confession and prayer are empty, try to parse them from the content HTML
+  if (!confession && !prayer && content) {
+    const pattern = /<p>\s*<(strong|b)[^>]*>\s*(Confession|Prayer)\s*<\/\1>\s*<\/p>\s*<p>(.*?)<\/p>\s*$/i;
+    const match = content.match(pattern);
+    if (match) {
+      const type = match[2].toLowerCase();
+      const text = match[3].replace(/<[^>]*>/g, '').trim();
+      if (type === 'confession') {
+        confession = text;
+      } else {
+        prayer = text;
+      }
+      content = content.replace(pattern, '').trim();
+    } else {
+      const loosePattern = /<p>\s*<(strong|b)[^>]*>\s*(Confession|Prayer)\s*<\/\1>\s*<\/p>\s*([\s\S]*?)$/i;
+      const looseMatch = content.match(loosePattern);
+      if (looseMatch) {
+        const type = looseMatch[2].toLowerCase();
+        const text = looseMatch[3].replace(/<[^>]*>/g, '').trim();
+        if (type === 'confession') {
+          confession = text;
+        } else {
+          prayer = text;
+        }
+        content = content.replace(loosePattern, '').trim();
+      }
+    }
+  }
+
   return {
     devotionalId: d.id || d.devotionalId,
     title: d.title || '',
-    content: d.content || '',
+    content: content,
     date: d.date ? d.date.split('T')[0] : '',
     bibleReading: d.scriptureText || d.bibleReading || '',
     bibleVerse: d.scriptureVerse || d.bibleVerse || '',
-    confession: d.confession || '',
-    prayer: d.prayer || '',
+    confession: confession,
+    prayer: prayer,
     thumbnailUrl: d.thumbnailUrl || '',
   };
 };

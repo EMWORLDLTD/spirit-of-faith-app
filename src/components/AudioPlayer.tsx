@@ -14,11 +14,12 @@ import {
   FlatList,
   PanResponder,
   Pressable,
+  BackHandler,
+  useColorScheme,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAudio } from '../contexts/AudioContext';
 import { Colors } from '../constants/theme';
-import { useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
@@ -180,7 +181,58 @@ export default function AudioPlayer() {
 
   const pan = useRef(new Animated.ValueXY()).current;
   const fullPlayerTranslateY = useRef(new Animated.Value(0)).current;
+  const expandAnim = useRef(new Animated.Value(0)).current;
   const dismissTimeoutRef = useRef<any>(null);
+  const [renderFullPlayer, setRenderFullPlayer] = useState(expanded);
+
+  // Sync expanded state with local rendering state and trigger transition animation
+  useEffect(() => {
+    if (expanded) {
+      setRenderFullPlayer(true);
+      Animated.spring(expandAnim, {
+        toValue: 1,
+        tension: 30,
+        friction: 8,
+        useNativeDriver: false,
+      }).start();
+    } else {
+      Animated.parallel([
+        Animated.spring(expandAnim, {
+          toValue: 0,
+          tension: 30,
+          friction: 8,
+          useNativeDriver: false,
+        }),
+        Animated.spring(fullPlayerTranslateY, {
+          toValue: 0,
+          tension: 30,
+          friction: 8,
+          useNativeDriver: false,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setRenderFullPlayer(false);
+        }
+      });
+    }
+  }, [expanded]);
+
+  // Handle hardware back button on Android to collapse the expanded player
+  useEffect(() => {
+    if (!expanded) return;
+
+    const onBackPress = () => {
+      setExpanded(false);
+      return true; // intercept back press
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBackPress
+    );
+
+    return () => backHandler.remove();
+  }, [expanded]);
 
   // Sync showQueueModal to a ref so PanResponder can access it
   const showQueueModalRef = useRef(showQueueModal);
@@ -265,23 +317,13 @@ export default function AudioPlayer() {
       },
       onPanResponderRelease: (_evt, gestureState) => {
         if (gestureState.dy > 120 || gestureState.vy > 0.5) {
-          // Swipe threshold met — animate out and close
-          Animated.timing(fullPlayerTranslateY, {
-            toValue: height,
-            duration: 250,
-            useNativeDriver: true,
-          }).start(() => {
-            setExpanded(false);
-            dismissTimeoutRef.current = setTimeout(() => {
-              fullPlayerTranslateY.setValue(0);
-              dismissTimeoutRef.current = null;
-            }, 600);
-          });
+          // Swipe threshold met — collapse player
+          setExpanded(false);
         } else {
           // Snap back
           Animated.spring(fullPlayerTranslateY, {
             toValue: 0,
-            useNativeDriver: true,
+            useNativeDriver: false,
             tension: 40,
             friction: 8,
           }).start();
@@ -333,7 +375,7 @@ export default function AudioPlayer() {
           Animated.timing(pan.x, {
             toValue: width,
             duration: 200,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }).start(() => {
             setMiniPlayerState('collapsed');
             pan.setValue({ x: 0, y: 0 });
@@ -343,7 +385,7 @@ export default function AudioPlayer() {
           Animated.timing(pan.x, {
             toValue: -width,
             duration: 200,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }).start(() => {
             setMiniPlayerState('collapsed');
             pan.setValue({ x: 0, y: 0 });
@@ -352,7 +394,7 @@ export default function AudioPlayer() {
           // Reset position
           Animated.spring(pan, {
             toValue: { x: 0, y: 0 },
-            useNativeDriver: true,
+            useNativeDriver: false,
             tension: 40,
             friction: 8,
           }).start();
@@ -488,127 +530,84 @@ export default function AudioPlayer() {
 
     const isFav = isFavorite(currentTrack);
 
+    // Interpolations for morphing player container
+    const containerHeight = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [74, height],
+    });
+    const containerWidth = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [width - 32, width],
+    });
+    const containerLeft = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [16, 0],
+    });
+    const containerBottom = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [76 + insets.bottom, 0],
+    });
+    const containerBorderRadius = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [18, 0],
+    });
+
+    // Opacities for layout cross-fade
+    const miniPlayerOpacity = expandAnim.interpolate({
+      inputRange: [0, 0.15],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+    const fullPlayerOpacity = expandAnim.interpolate({
+      inputRange: [0.85, 1],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+
+    // Shared Artwork Interpolations
+    const coverArtSize = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [40, width * 0.68],
+    });
+    const coverArtLeft = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [12, (width - width * 0.68) / 2],
+    });
+    const coverArtTop = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [17, insets.top + 79],
+    });
+    const coverArtBorderRadius = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [8, (width * 0.68) / 2],
+    });
+    const coverArtBorderWidth = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 3],
+    });
+    const coverArtBorderColor = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.4)'],
+    });
+    const coverArtShadowOpacity = expandAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 0.3],
+    });
+
+    // Placeholder Icon Opacities
+    const placeholderMiniOpacity = expandAnim.interpolate({
+      inputRange: [0, 0.2],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+    const placeholderFullOpacity = expandAnim.interpolate({
+      inputRange: [0.8, 1],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+
     return (
       <>
-        {/* FLOATING GLASSMORPHIC MINI PLAYER BAR */}
-        {!expanded && resolvedState === 'full' && (
-          <AnimatedBlurView
-            intensity={Platform.OS === 'android' ? 0 : 75}
-            tint={colorScheme === 'dark' ? 'dark' : 'light'}
-            style={[
-              { 
-                backgroundColor: Platform.OS === 'android'
-                  ? (activeScheme === 'dark' ? 'rgba(3, 7, 24, 0.65)' : 'rgba(240, 246, 255, 0.65)')
-                  : 'transparent' 
-              },
-              styles.miniPlayer,
-              {
-                borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(27, 84, 164, 0.08)',
-                borderWidth: activeScheme === 'dark' ? 1 : 0.5,
-                bottom: 76 + insets.bottom,
-                elevation: Platform.OS === 'android' ? (activeScheme === 'dark' ? 2 : 1) : 0, // Lower elevation to prevent shadow bleed-through
-                transform: [{ translateX: pan.x }],
-              },
-            ]}
-            className="overflow-hidden"
-            {...panResponder.panHandlers}
-          >
-            <TouchableOpacity
-              style={StyleSheet.absoluteFillObject}
-              onPress={() => setExpanded(true)}
-              activeOpacity={0.9}
-            >
-              {/* Native blur backdrop for real glassmorphism */}
-              <BlurView
-                intensity={Platform.OS === 'android' ? (activeScheme === 'dark' ? 65 : 85) : (activeScheme === 'dark' ? 70 : 90)}
-                tint={activeScheme === 'dark' ? 'dark' : 'light'}
-                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-                style={StyleSheet.absoluteFillObject}
-              />
-
-              {/* Semi-transparent gradient overlay on top of blur */}
-              <LinearGradient
-                colors={
-                  activeScheme === 'dark'
-                    ? ['rgba(15, 23, 42, 0.45)', 'rgba(30, 41, 59, 0.3)']
-                    : ['rgba(255, 255, 255, 0.5)', 'rgba(219, 234, 254, 0.25)']
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-
-              {/* Glossy light reflection highlight at top edge */}
-              <LinearGradient
-                colors={
-                  activeScheme === 'dark'
-                    ? ['rgba(255, 255, 255, 0.22)', 'rgba(255, 255, 255, 0.05)', 'transparent']
-                    : ['rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.25)', 'transparent']
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0.6, y: 1 }}
-                style={styles.miniGlossHighlight}
-              />
-
-              <View style={styles.miniPlayerContent}>
-                {/* Artwork / Cover */}
-                {currentTrack.coverUrl ? (
-                  <Image source={{ uri: currentTrack.coverUrl }} style={styles.miniArtwork} />
-                ) : (
-                  <View style={[styles.miniArtworkPlaceholder, { backgroundColor: themeColors.primary }]}>
-                    <Music size={14} color="#ffffff" />
-                  </View>
-                )}
-
-                {/* Title / Info */}
-                <View style={styles.miniTextContainer}>
-                  <Text style={[styles.miniNowPlaying, { color: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(27, 84, 164, 0.7)' }]} numberOfLines={1}>
-                    NOW PLAYING
-                  </Text>
-                  <Text style={[styles.miniTitle, { color: themeColors.text }]} numberOfLines={1}>
-                    {currentTrack.title}
-                  </Text>
-                  <Text style={[styles.miniSpeaker, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                    {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
-                  </Text>
-                  
-                  {/* Progress bar directly below speaker text */}
-                  <View style={styles.miniProgressBarContainerInline}>
-                    <View
-                      style={[
-                        styles.miniProgressBarFillInline,
-                        { width: `${progress * 100}%`, backgroundColor: themeColors.primary },
-                      ]}
-                    />
-                  </View>
-                </View>
-
-                {/* Play/Pause Only + Duration */}
-                <View style={styles.miniRightColumn}>
-                  <View style={styles.miniControlsRow}>
-                    {/* Play/Pause */}
-                    {isBuffering ? (
-                      <ActivityIndicator size="small" color={themeColors.primary} style={styles.miniControlBtn} />
-                    ) : (
-                      <TouchableOpacity onPress={handlePlayPause} style={styles.miniPlayPauseBtn}>
-                        {isPlaying ? (
-                          <Pause size={18} color={themeColors.text} fill={themeColors.text} />
-                        ) : (
-                          <Play size={18} color={themeColors.text} fill={themeColors.text} />
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  {/* Duration Text */}
-                  <Text style={[styles.miniDurationText, { color: themeColors.textSecondary }]}>
-                    {formatTime(position)} / {formatTime(duration)}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          </AnimatedBlurView>
-        )}
-
         {/* FLOATING CIRCULAR COLLAPSED MINI PLAYER */}
         {!expanded && resolvedState === 'collapsed' && (
           <TouchableOpacity
@@ -641,375 +640,382 @@ export default function AudioPlayer() {
           </TouchableOpacity>
         )}
 
-        {/* FULL PLAYER MODAL */}
-        <Modal
-          visible={expanded}
-          animationType="slide"
-          transparent={true}
-          presentationStyle="overFullScreen"
-          onRequestClose={() => setExpanded(false)}
-        >
+        {/* UNIFIED MORPHING PLAYER */}
+        {resolvedState === 'full' && (
           <Animated.View
             style={[
-              styles.fullContainer,
-              { transform: [{ translateY: fullPlayerTranslateY }] },
+              styles.morphingPlayerContainer,
+              {
+                width: containerWidth,
+                height: containerHeight,
+                left: containerLeft,
+                bottom: containerBottom,
+                borderRadius: containerBorderRadius,
+                transform: [
+                  { translateX: pan.x },
+                  { translateY: fullPlayerTranslateY },
+                ],
+                borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(27, 84, 164, 0.08)',
+                borderWidth: expandAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [activeScheme === 'dark' ? 1 : 0.5, 0],
+                }),
+              },
             ]}
-            {...fullPlayerPanResponder.panHandlers}
           >
-            {/* BACKGROUND BLUR OR BRAND GRADIENT */}
-            {currentTrack.coverUrl ? (
-              <>
-                <Image
-                  source={{ uri: currentTrack.coverUrl }}
+            {/* FULL PLAYER BACKGROUND (fades in) */}
+            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: expandAnim, overflow: 'hidden', borderRadius: containerBorderRadius }]}>
+              {currentTrack.coverUrl ? (
+                <>
+                  <Image
+                    source={{ uri: currentTrack.coverUrl }}
+                    style={StyleSheet.absoluteFillObject}
+                    blurRadius={45}
+                  />
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(15, 23, 42, 0.55)' }]} />
+                </>
+              ) : (
+                <LinearGradient
+                  colors={['#ffffff', '#002664']}
+                  start={{ x: 0.1, y: 0.1 }}
+                  end={{ x: 0.9, y: 0.9 }}
                   style={StyleSheet.absoluteFillObject}
-                  blurRadius={45}
                 />
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(15, 23, 42, 0.55)' }]} />
-              </>
-            ) : (
-              <LinearGradient
-                colors={['#ffffff', '#002664']}
-                start={{ x: 0.1, y: 0.1 }}
-                end={{ x: 0.9, y: 0.9 }}
+              )}
+            </Animated.View>
+
+            {/* MINI PLAYER BACKGROUND (fades out) */}
+            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: miniPlayerOpacity, overflow: 'hidden', borderRadius: containerBorderRadius }]}>
+              <BlurView
+                intensity={Platform.OS === 'android' ? (activeScheme === 'dark' ? 65 : 85) : (activeScheme === 'dark' ? 70 : 90)}
+                tint={activeScheme === 'dark' ? 'dark' : 'light'}
+                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                 style={StyleSheet.absoluteFillObject}
               />
-            )}
+              <LinearGradient
+                colors={
+                  activeScheme === 'dark'
+                    ? ['rgba(15, 23, 42, 0.45)', 'rgba(30, 41, 59, 0.3)']
+                    : ['rgba(255, 255, 255, 0.5)', 'rgba(219, 234, 254, 0.25)']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <LinearGradient
+                colors={
+                  activeScheme === 'dark'
+                    ? ['rgba(255, 255, 255, 0.22)', 'rgba(255, 255, 255, 0.05)', 'transparent']
+                    : ['rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.25)', 'transparent']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.6, y: 1 }}
+                style={styles.miniGlossHighlight}
+              />
+            </Animated.View>
 
-            <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom || 16 }]}>
-              {/* Swipe indicator pill */}
-              <View style={styles.swipeIndicatorContainer}>
-                <View style={styles.swipeIndicatorPill} />
-              </View>
-              {/* Header */}
-              <View style={styles.fullHeader}>
-                <TouchableOpacity onPress={() => setExpanded(false)} style={styles.closeBtn}>
-                  <ChevronDown size={28} color="#ffffff" />
-                </TouchableOpacity>
-                <Text style={styles.fullHeaderTitle}>Now Playing</Text>
-                
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <TouchableOpacity 
-                    onPress={() => {
-                      if (isDownloaded(currentTrack)) {
-                        setShowOfflineMenu(true);
-                      } else {
-                        downloadTrack(currentTrack);
-                      }
-                    }} 
-                    disabled={downloadProgress[currentTrack.messageId] !== undefined}
-                    style={[styles.favoriteBtn, { marginRight: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
-                  >
-                    {downloadProgress[currentTrack.messageId] !== undefined ? (
-                      <>
-                        <ActivityIndicator size="small" color="#ffffff" />
-                        <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>
-                          {Math.round(downloadProgress[currentTrack.messageId] * 100)}%
-                        </Text>
-                      </>
-                    ) : isDownloaded(currentTrack) ? (
-                      <Check size={22} color="#22c55e" />
-                    ) : (
-                      <Download size={22} color="#ffffff" />
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => toggleFavorite(currentTrack)} style={styles.favoriteBtn}>
-                    <Heart size={22} color={isFav ? '#e11d48' : '#ffffff'} fill={isFav ? '#e11d48' : 'transparent'} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+            {/* MINI PLAYER CONTENT */}
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  opacity: miniPlayerOpacity,
+                }
+              ]}
+              pointerEvents={expanded ? 'none' : 'auto'}
+            >
+              <TouchableOpacity
+                style={StyleSheet.absoluteFillObject}
+                onPress={() => setExpanded(true)}
+                activeOpacity={0.9}
+                {...panResponder.panHandlers}
+              >
+                <View style={styles.miniPlayerContent}>
+                  {/* Placeholder for cover art */}
+                  <View style={{ width: 40, height: 40, marginRight: 10 }} />
 
-              {/* Circular Cover Art */}
-              <View style={styles.artworkContainer}>
-                {currentTrack.coverUrl ? (
-                  <Image source={{ uri: currentTrack.coverUrl }} style={styles.artworkCircle} />
-                ) : (
-                  <View style={[styles.artworkCirclePlaceholder, { backgroundColor: themeColors.primary }]}>
-                    <Music size={90} color="#ffffff" />
-                    <Text style={styles.artworkText}>Christ Pavilion</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Track metadata */}
-              <View style={styles.metadataContainer}>
-                <Text style={styles.trackName} numberOfLines={2}>
-                  {currentTrack.title}
-                </Text>
-                <Text style={styles.trackSpeaker}>
-                  {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
-                </Text>
-              </View>
-
-              {/* Audio Waveform visualization */}
-              <PlaybackWaveform isPlaying={isPlaying} />
-
-              {/* Seekbar and Timestamps */}
-              <View style={styles.seekbarContainer}>
-                {/* Speed Control Row */}
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 }}>
-                  <TouchableOpacity onPress={cyclePlaybackRate} style={styles.speedBadge}>
-                    <Text style={styles.speedText}>{playbackRate.toFixed(2)}x</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View
-                  style={{ height: 30, justifyContent: 'center' }}
-                  {...seekbarPanResponder.panHandlers}
-                >
-                  <View style={styles.seekbarTrack}>
-                    <View
-                      style={[
-                        styles.seekbarFill,
-                        { width: `${currentProgress * 100}%` },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.seekbarThumb,
-                        { left: `${currentProgress * 98}%` },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <View style={styles.timestampsRow}>
-                  <Text style={styles.timestampText}>
-                    {formatTime(currentPosition)}
-                  </Text>
-                  {isBuffering && (
-                    <View style={styles.bufferingBox}>
-                      <ActivityIndicator size="small" color="#ffffff" style={{ transform: [{ scale: 0.8 }] }} />
-                      <Text style={styles.bufferingText}>
-                        Buffering...
-                      </Text>
+                  {/* Title / Info */}
+                  <View style={styles.miniTextContainer}>
+                    <Text style={[styles.miniNowPlaying, { color: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(27, 84, 164, 0.7)' }]} numberOfLines={1}>
+                      NOW PLAYING
+                    </Text>
+                    <Text style={[styles.miniTitle, { color: themeColors.text }]} numberOfLines={1}>
+                      {currentTrack.title}
+                    </Text>
+                    <Text style={[styles.miniSpeaker, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                      {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
+                    </Text>
+                    
+                    {/* Progress bar directly below speaker text */}
+                    <View style={styles.miniProgressBarContainerInline}>
+                      <View
+                        style={[
+                          styles.miniProgressBarFillInline,
+                          { width: `${progress * 100}%`, backgroundColor: themeColors.primary },
+                        ]}
+                      />
                     </View>
-                  )}
-                  <Text style={styles.timestampText}>
-                    {formatTime(duration)}
-                  </Text>
+                  </View>
+
+                  {/* Play/Pause Only + Duration */}
+                  <View style={styles.miniRightColumn}>
+                    <View style={styles.miniControlsRow}>
+                      {isBuffering ? (
+                        <ActivityIndicator size="small" color={themeColors.primary} style={styles.miniControlBtn} />
+                      ) : (
+                        <TouchableOpacity onPress={handlePlayPause} style={styles.miniPlayPauseBtn}>
+                          {isPlaying ? (
+                            <Pause size={18} color={themeColors.text} fill={themeColors.text} />
+                          ) : (
+                            <Play size={18} color={themeColors.text} fill={themeColors.text} />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <Text style={[styles.miniDurationText, { color: themeColors.textSecondary }]}>
+                      {formatTime(position)} / {formatTime(duration)}
+                    </Text>
+                  </View>
                 </View>
-              </View>
+              </TouchableOpacity>
+            </Animated.View>
 
-              {/* Unified Premium Actions Row */}
-              <View style={styles.playerActionsRow}>
-                {/* Add to Playlist */}
-                <TouchableOpacity 
-                  onPress={() => addToPlaylist(currentTrack)} 
-                  style={styles.actionIconButton}
-                >
-                  <View style={styles.actionIconCircle}>
-                    <ListPlus size={22} color="#ffffff" />
-                  </View>
-                  <Text style={styles.actionIconLabel}>Playlist</Text>
-                </TouchableOpacity>
-
-                {/* Repeat Same Teaching */}
-                <TouchableOpacity 
-                  onPress={toggleRepeatMode} 
-                  style={styles.actionIconButton}
-                >
-                  <View style={[
-                    styles.actionIconCircle, 
-                    repeatMode !== 'off' && { backgroundColor: 'rgba(32, 138, 239, 0.25)', borderColor: '#208AEF' }
-                  ]}>
-                    <Repeat size={22} color={repeatMode !== 'off' ? '#208AEF' : '#ffffff'} />
-                    {repeatMode === 'one' && (
-                      <View style={styles.repeatOneBadge}>
-                        <Text style={styles.repeatOneText}>1</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={[styles.actionIconLabel, repeatMode !== 'off' && { color: '#208AEF', fontWeight: '600' }]}>
-                    {repeatMode === 'one' ? 'Repeat One' : repeatMode === 'all' ? 'Repeat All' : 'Repeat'}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* All Series Teachings Icon */}
-                <TouchableOpacity 
-                  onPress={() => {
-                    setExpanded(false);
-                    router.push({
-                      pathname: '/teachings',
-                      params: {
-                        autoSelectSeriesId: currentTrack.seriesId ? String(currentTrack.seriesId) : undefined,
-                        autoSelectMessageId: String(currentTrack.messageId),
-                      }
-                    });
-                  }} 
-                  style={styles.actionIconButton}
-                >
-                  <View style={styles.actionIconCircle}>
-                    <Library size={22} color="#ffffff" />
-                  </View>
-                  <Text style={styles.actionIconLabel}>Series</Text>
-                </TouchableOpacity>
-
-                {/* Queue / Up Next */}
-                <TouchableOpacity 
-                  onPress={() => setShowQueueModal(true)} 
-                  style={styles.actionIconButton}
-                >
-                  <View style={styles.actionIconCircle}>
-                    <ListMusic size={22} color="#ffffff" />
-                  </View>
-                  <Text style={styles.actionIconLabel}>Queue</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Playback Controls */}
-              <View style={styles.controlsRow}>
-                {/* Prev */}
-                <TouchableOpacity onPress={playPrevious} style={styles.controlBtn}>
-                  <SkipBack size={26} color="#ffffff" fill="#ffffff" />
-                </TouchableOpacity>
-
-                {/* Skip Back Dynamic (Long Press to set) */}
-                <TouchableOpacity 
-                  onPress={handleSkipBack} 
-                  onLongPress={promptSkipInterval}
-                  delayLongPress={500}
-                  style={styles.controlBtn}
-                >
-                  <Text style={styles.skipLabel}>{skipInterval}s</Text>
-                  <SkipBack size={18} color="#ffffff" />
-                </TouchableOpacity>
-
-                {/* Play/Pause Button (White circle, brand blue icon) */}
-                <TouchableOpacity
-                  onPress={handlePlayPause}
-                  style={styles.playBtnContainer}
-                >
-                  {isBuffering ? (
-                    <ActivityIndicator size="small" color="#002664" />
-                  ) : isPlaying ? (
-                    <Pause size={28} color="#002664" fill="#002664" />
-                  ) : (
-                    <Play size={28} color="#002664" fill="#002664" style={{ marginLeft: 4 }} />
-                  )}
-                </TouchableOpacity>
-
-                {/* Skip Forward Dynamic (Long Press to set) */}
-                <TouchableOpacity 
-                  onPress={handleSkipForward} 
-                  onLongPress={promptSkipInterval}
-                  delayLongPress={500}
-                  style={styles.controlBtn}
-                >
-                  <Text style={styles.skipLabel}>{skipInterval}s</Text>
-                  <SkipForward size={18} color="#ffffff" />
-                </TouchableOpacity>
-
-                {/* Next */}
-                <TouchableOpacity onPress={playNext} style={styles.controlBtn}>
-                  <SkipForward size={26} color="#ffffff" fill="#ffffff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {showSkipMenu && (
-              <View style={StyleSheet.absoluteFillObject}>
-                <Pressable
-                  style={StyleSheet.absoluteFillObject}
-                  onPress={() => setShowSkipMenu(false)}
-                />
-                <View style={[
-                  styles.skipMenuContainer,
+            {/* FULL PLAYER CONTENT */}
+            {renderFullPlayer && (
+              <Animated.View
+                style={[
+                  StyleSheet.absoluteFillObject,
                   {
-                    backgroundColor: activeScheme === 'dark' ? '#1e293b' : '#ffffff',
-                    borderColor: activeScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(27,84,164,0.08)',
+                    opacity: fullPlayerOpacity,
                   }
-                ]}>
-                  <Text style={[styles.skipMenuTitle, { color: activeScheme === 'dark' ? '#94a3b8' : '#64748b' }]}>
-                    Set Skip Interval
-                  </Text>
-                  {[5, 10, 15].map((sec) => (
-                    <TouchableOpacity
-                      key={sec}
-                      style={[
-                        styles.skipMenuItem,
-                        skipInterval === sec && {
-                          backgroundColor: activeScheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(27,84,164,0.05)'
-                        }
-                      ]}
-                      onPress={() => {
-                        updateSkipInterval(sec);
-                        setShowSkipMenu(false);
-                      }}
-                    >
-                      <Text style={[
-                        styles.skipMenuText,
-                        { color: activeScheme === 'dark' ? '#f1f5f9' : '#334155' },
-                        skipInterval === sec && { fontWeight: 'bold', color: themeColors.primary }
+                ]}
+                pointerEvents={expanded ? 'auto' : 'none'}
+              >
+                <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom || 16 }]} {...fullPlayerPanResponder.panHandlers}>
+                  {/* Swipe indicator pill */}
+                  <View style={styles.swipeIndicatorContainer}>
+                    <View style={styles.swipeIndicatorPill} />
+                  </View>
+                  {/* Header */}
+                  <View style={styles.fullHeader}>
+                    <TouchableOpacity onPress={() => setExpanded(false)} style={styles.closeBtn}>
+                      <ChevronDown size={28} color="#ffffff" />
+                    </TouchableOpacity>
+                    <Text style={styles.fullHeaderTitle}>Now Playing</Text>
+                    
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity 
+                        onPress={() => {
+                          if (isDownloaded(currentTrack)) {
+                            setShowOfflineMenu(true);
+                          } else {
+                            downloadTrack(currentTrack);
+                          }
+                        }} 
+                        disabled={downloadProgress[currentTrack.messageId] !== undefined}
+                        style={[styles.favoriteBtn, { marginRight: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                      >
+                        {downloadProgress[currentTrack.messageId] !== undefined ? (
+                          <>
+                            <ActivityIndicator size="small" color="#ffffff" />
+                            <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>
+                              {Math.round(downloadProgress[currentTrack.messageId] * 100)}%
+                            </Text>
+                          </>
+                        ) : isDownloaded(currentTrack) ? (
+                          <Check size={22} color="#22c55e" />
+                        ) : (
+                          <Download size={22} color="#ffffff" />
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => toggleFavorite(currentTrack)} style={styles.favoriteBtn}>
+                        <Heart size={22} color={isFav ? '#e11d48' : '#ffffff'} fill={isFav ? '#e11d48' : 'transparent'} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Artwork Placeholder View to preserve height spacing in vertical layout */}
+                  <View style={styles.artworkContainer}>
+                    <View style={{ width: width * 0.68, height: width * 0.68 }} />
+                  </View>
+
+                  {/* Track metadata */}
+                  <View style={styles.metadataContainer}>
+                    <Text style={styles.trackName} numberOfLines={2}>
+                      {currentTrack.title}
+                    </Text>
+                    <Text style={styles.trackSpeaker}>
+                      {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
+                    </Text>
+                  </View>
+
+                  {/* Audio Waveform visualization */}
+                  <PlaybackWaveform isPlaying={isPlaying} />
+
+                  {/* Seekbar and Timestamps */}
+                  <View style={styles.seekbarContainer}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 }}>
+                      <TouchableOpacity onPress={cyclePlaybackRate} style={styles.speedBadge}>
+                        <Text style={styles.speedText}>{playbackRate.toFixed(2)}x</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ height: 30, justifyContent: 'center' }} {...seekbarPanResponder.panHandlers}>
+                      <View style={styles.seekbarTrack}>
+                        <View style={[styles.seekbarFill, { width: `${currentProgress * 100}%` }]} />
+                        <View style={[styles.seekbarThumb, { left: `${currentProgress * 98}%` }]} />
+                      </View>
+                    </View>
+                    <View style={styles.timestampsRow}>
+                      <Text style={styles.timestampText}>{formatTime(currentPosition)}</Text>
+                      {isBuffering && (
+                        <View style={styles.bufferingBox}>
+                          <ActivityIndicator size="small" color="#ffffff" style={{ transform: [{ scale: 0.8 }] }} />
+                          <Text style={styles.bufferingText}>Buffering...</Text>
+                        </View>
+                      )}
+                      <Text style={styles.timestampText}>{formatTime(duration)}</Text>
+                    </View>
+                  </View>
+
+                  {/* Unified Actions Row */}
+                  <View style={styles.playerActionsRow}>
+                    <TouchableOpacity onPress={() => addToPlaylist(currentTrack)} style={styles.actionIconButton}>
+                      <View style={styles.actionIconCircle}>
+                        <ListPlus size={22} color="#ffffff" />
+                      </View>
+                      <Text style={styles.actionIconLabel}>Playlist</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={toggleRepeatMode} style={styles.actionIconButton}>
+                      <View style={[
+                        styles.actionIconCircle, 
+                        repeatMode !== 'off' && { backgroundColor: 'rgba(32, 138, 239, 0.25)', borderColor: '#208AEF' }
                       ]}>
-                        {sec} Seconds
+                        <Repeat size={22} color={repeatMode !== 'off' ? '#208AEF' : '#ffffff'} />
+                        {repeatMode === 'one' && (
+                          <View style={styles.repeatOneBadge}>
+                            <Text style={styles.repeatOneText}>1</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.actionIconLabel, repeatMode !== 'off' && { color: '#208AEF', fontWeight: '600' }]}>
+                        {repeatMode === 'one' ? 'Repeat One' : repeatMode === 'all' ? 'Repeat All' : 'Repeat'}
                       </Text>
-                      {skipInterval === sec && (
-                        <Check size={16} color={themeColors.primary} style={{ marginLeft: 'auto' }} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setExpanded(false);
+                        router.push({
+                          pathname: '/teachings',
+                          params: {
+                            autoSelectSeriesId: currentTrack.seriesId ? String(currentTrack.seriesId) : undefined,
+                            autoSelectMessageId: String(currentTrack.messageId),
+                          }
+                        });
+                      }} 
+                      style={styles.actionIconButton}
+                    >
+                      <View style={styles.actionIconCircle}>
+                        <Library size={22} color="#ffffff" />
+                      </View>
+                      <Text style={styles.actionIconLabel}>Series</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => setShowQueueModal(true)} style={styles.actionIconButton}>
+                      <View style={styles.actionIconCircle}>
+                        <ListMusic size={22} color="#ffffff" />
+                      </View>
+                      <Text style={styles.actionIconLabel}>Queue</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Playback Controls */}
+                  <View style={styles.controlsRow}>
+                    <TouchableOpacity onPress={playPrevious} style={styles.controlBtn}>
+                      <SkipBack size={26} color="#ffffff" fill="#ffffff" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={handleSkipBack} onLongPress={promptSkipInterval} delayLongPress={500} style={styles.controlBtn}>
+                      <Text style={styles.skipLabel}>{skipInterval}s</Text>
+                      <SkipBack size={18} color="#ffffff" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={handlePlayPause} style={styles.playBtnContainer}>
+                      {isBuffering ? (
+                        <ActivityIndicator size="small" color="#002664" />
+                      ) : isPlaying ? (
+                        <Pause size={28} color="#002664" fill="#002664" />
+                      ) : (
+                        <Play size={28} color="#002664" fill="#002664" style={{ marginLeft: 4 }} />
                       )}
                     </TouchableOpacity>
-                  ))}
+
+                    <TouchableOpacity onPress={handleSkipForward} onLongPress={promptSkipInterval} delayLongPress={500} style={styles.controlBtn}>
+                      <Text style={styles.skipLabel}>{skipInterval}s</Text>
+                      <SkipForward size={18} color="#ffffff" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={playNext} style={styles.controlBtn}>
+                      <SkipForward size={26} color="#ffffff" fill="#ffffff" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
+              </Animated.View>
             )}
 
-            {showOfflineMenu && currentTrack && (
-              <View style={StyleSheet.absoluteFillObject}>
-                <Pressable
-                  style={StyleSheet.absoluteFillObject}
-                  onPress={() => setShowOfflineMenu(false)}
+            {/* SHARED ARTWORK ELEMENT */}
+            <Animated.View
+              style={[
+                styles.sharedArtworkContainer,
+                {
+                  width: coverArtSize,
+                  height: coverArtSize,
+                  left: coverArtLeft,
+                  top: coverArtTop,
+                  borderRadius: coverArtBorderRadius,
+                  borderWidth: coverArtBorderWidth,
+                  borderColor: coverArtBorderColor,
+                  shadowOpacity: coverArtShadowOpacity,
+                  elevation: expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }),
+                }
+              ]}
+              pointerEvents="none"
+            >
+              {currentTrack.coverUrl ? (
+                <Animated.Image 
+                  source={{ uri: currentTrack.coverUrl }} 
+                  style={[
+                    styles.sharedArtworkImage,
+                    {
+                      borderRadius: coverArtBorderRadius,
+                    }
+                  ]} 
                 />
-                <View style={[
-                  styles.offlineMenuContainer,
-                  {
-                    top: insets.top + (Platform.OS === 'ios' ? 48 : 84),
-                    backgroundColor: activeScheme === 'dark' ? '#1e293b' : '#ffffff',
-                    borderColor: activeScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(27,84,164,0.08)',
-                  }
-                ]}>
-                  <Text style={[styles.offlineMenuTitle, { color: activeScheme === 'dark' ? '#94a3b8' : '#64748b' }]}>
-                    Offline Options
-                  </Text>
-                  
-                  <TouchableOpacity
-                    style={styles.offlineMenuItem}
-                    onPress={() => {
-                      setShowOfflineMenu(false);
-                      saveTrackToDevice(currentTrack);
-                    }}
-                  >
-                    <Library size={16} color={themeColors.primary} style={{ marginRight: 8 }} />
-                    <Text style={[styles.offlineMenuText, { color: activeScheme === 'dark' ? '#f1f5f9' : '#334155' }]}>
-                      Save to Device Store
-                    </Text>
-                  </TouchableOpacity>
+              ) : (
+                <Animated.View 
+                  style={[
+                    styles.sharedArtworkPlaceholder, 
+                    { 
+                      borderRadius: coverArtBorderRadius, 
+                      backgroundColor: themeColors.primary,
+                      width: '100%',
+                      height: '100%',
+                    }
+                  ]}
+                >
+                  <Animated.View style={{ position: 'absolute', opacity: placeholderMiniOpacity }}>
+                    <Music size={14} color="#ffffff" />
+                  </Animated.View>
+                  <Animated.View style={{ position: 'absolute', opacity: placeholderFullOpacity, alignItems: 'center', justifyContent: 'center' }}>
+                    <Music size={90} color="#ffffff" />
+                    <Animated.Text style={[styles.artworkText, { marginTop: 12, opacity: placeholderFullOpacity }]}>Christ Pavilion</Animated.Text>
+                  </Animated.View>
+                </Animated.View>
+              )}
+            </Animated.View>
 
-                  <TouchableOpacity
-                    style={styles.offlineMenuItem}
-                    onPress={() => {
-                      setShowOfflineMenu(false);
-                      shareTrack(currentTrack);
-                    }}
-                  >
-                    <Share2 size={16} color={themeColors.primary} style={{ marginRight: 8 }} />
-                    <Text style={[styles.offlineMenuText, { color: activeScheme === 'dark' ? '#f1f5f9' : '#334155' }]}>
-                      Share Track
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.offlineMenuItem}
-                    onPress={() => {
-                      setShowOfflineMenu(false);
-                      deleteDownloadedTrack(currentTrack.messageId);
-                    }}
-                  >
-                    <Trash2 size={16} color="#ef4444" style={{ marginRight: 8 }} />
-                    <Text style={[styles.offlineMenuText, { color: '#ef4444', fontWeight: 'bold' }]}>
-                      Delete Download
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
             {/* QUEUE OVERLAY (inline, not a separate Modal) */}
             {showQueueModal && (
               <View style={[StyleSheet.absoluteFillObject, { zIndex: 50, justifyContent: 'flex-end' }]}>  
@@ -1116,7 +1122,7 @@ export default function AudioPlayer() {
               </View>
             )}
           </Animated.View>
-        </Modal>
+        )}
 
         {/* TRACK OPTIONS BOTTOM ACTION SHEET */}
         <Modal
@@ -1296,6 +1302,31 @@ export default function AudioPlayer() {
 }
 
 const styles = StyleSheet.create({
+  morphingPlayerContainer: {
+    position: 'absolute',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 10,
+    zIndex: 999,
+    overflow: 'hidden',
+  },
+  sharedArtworkContainer: {
+    position: 'absolute',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 16,
+  },
+  sharedArtworkImage: {
+    width: '100%',
+    height: '100%',
+  },
+  sharedArtworkPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   miniPlayer: {
     position: 'absolute',
     bottom: 76, // dynamically set via inline style
