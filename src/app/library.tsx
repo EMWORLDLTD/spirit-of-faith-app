@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAudio } from '../contexts/AudioContext';
+import { useAlert } from '../contexts/AlertContext';
 import { Colors } from '../constants/theme';
 import { apiService } from '../services/api';
 import { useColorScheme } from 'react-native';
@@ -35,6 +36,7 @@ const { width } = Dimensions.get('window');
 export default function LibraryScreen() {
   const systemScheme = useColorScheme();
   const { themeMode, downloadedTracks, playTrack, deleteDownloadedTrack } = useAudio();
+  const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
 
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
@@ -113,18 +115,18 @@ export default function LibraryScreen() {
   };
 
   const handleDeleteDownload = (track: any) => {
-    Alert.alert(
-      'Delete Download',
-      `Are you sure you want to remove "${track.title}" from your offline downloads?`,
-      [
+    showAlert({
+      title: 'Delete Download',
+      message: `Are you sure you want to remove "${track.title}" from your offline downloads?`,
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive', 
-          onPress: () => deleteDownloadedTrack(track.messageId) 
-        }
-      ]
-    );
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteDownloadedTrack(track.messageId),
+        },
+      ],
+    });
   };
 
   return (

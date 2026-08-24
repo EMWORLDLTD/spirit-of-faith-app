@@ -188,7 +188,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     let active = true;
     const resolveTrackNumbers = async () => {
-      const tracksToResolve = trackList.filter(t => t.seriesId && !t.originalTrackNumber);
+      const tracksToResolve = trackList.filter(t => t.seriesId);
       if (tracksToResolve.length === 0) return;
 
       let updated = false;
@@ -203,7 +203,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const foundInSeries = seriesMsgs.find(m => String(m.messageId) === String(track.messageId));
           if (foundInSeries && foundInSeries.originalTrackNumber) {
             const idx = newTrackList.findIndex(t => String(t.messageId) === String(track.messageId));
-            if (idx !== -1) {
+            if (idx !== -1 && newTrackList[idx].originalTrackNumber !== foundInSeries.originalTrackNumber) {
               newTrackList[idx] = {
                 ...newTrackList[idx],
                 originalTrackNumber: foundInSeries.originalTrackNumber,
@@ -221,9 +221,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         AsyncStorage.setItem('SOF_LAST_PLAYLIST', JSON.stringify(newTrackList)).catch(() => {});
 
-        if (currentTrack && currentTrack.seriesId && !currentTrack.originalTrackNumber) {
+        if (currentTrack && currentTrack.seriesId) {
           const matchingCurrent = newTrackList.find(t => String(t.messageId) === String(currentTrack.messageId));
-          if (matchingCurrent && matchingCurrent.originalTrackNumber) {
+          if (matchingCurrent && matchingCurrent.originalTrackNumber && currentTrack.originalTrackNumber !== matchingCurrent.originalTrackNumber) {
             setCurrentTrack(matchingCurrent);
             AsyncStorage.setItem('SOF_LAST_PLAYED_TRACK', JSON.stringify(matchingCurrent)).catch(() => {});
           }
@@ -536,6 +536,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await AsyncStorage.setItem('SOF_PLAYBACK_POSITIONS', JSON.stringify(savedPositionsRef.current)).catch(() => {});
         }
       } else {
+        // If track finished or is at the very end, restart from beginning
+        if (duration > 0 && position >= duration - 500) {
+          await soundRef.current.seekTo(0);
+          setPosition(0);
+        }
         soundRef.current.play();
       }
     } catch (error) {

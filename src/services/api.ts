@@ -47,6 +47,7 @@ export interface Devotional {
   confession?: string;
   prayer?: string;
   thumbnailUrl?: string;
+  audioUrl?: string;
 }
 
 export interface EventSession {
@@ -115,7 +116,53 @@ const mapDevotional = (d: any): Devotional => {
     confession: confession,
     prayer: prayer,
     thumbnailUrl: d.thumbnailUrl || '',
+    audioUrl: d.audioUrl || d.audio_url || d.audio || '',
   };
+};
+
+// Helper to extract or parse track / part number from message properties or title
+export const extractTrackNumber = (title?: string, rawObj?: any): number | null => {
+  // 1. Check rawObj for explicit track/part/sequence property
+  if (rawObj) {
+    const explicitVal =
+      rawObj.trackNumber ??
+      rawObj.track_number ??
+      rawObj.trackNo ??
+      rawObj.track ??
+      rawObj.sequence ??
+      rawObj.order ??
+      rawObj.part;
+    if (explicitVal !== undefined && explicitVal !== null && !isNaN(Number(explicitVal)) && Number(explicitVal) > 0) {
+      return Number(explicitVal);
+    }
+  }
+
+  // 2. Try parsing from title
+  if (!title) return null;
+  const cleanTitle = title.trim();
+
+  // Pattern A: "Part 1", "Pt 2", "Pt. 3", "Track 1", "Trk 2", "Session 1", "Episode 1", "Lesson 1", "Volume 1", "Vol 1"
+  const partMatch = cleanTitle.match(/(?:part|pt\.?|track|trk\.?|session|episode|ep\.?|lesson|vol(?:ume)?\.?)\s*#?\s*(\d+)/i);
+  if (partMatch && partMatch[1]) {
+    const num = parseInt(partMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  // Pattern B: "#1", "#02"
+  const hashMatch = cleanTitle.match(/(?:^|\s)#(\d+)(?:\s|$)/);
+  if (hashMatch && hashMatch[1]) {
+    const num = parseInt(hashMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  // Pattern C: Trailing or parenthesized digits: "- 1", "(2)", "- 3", "— 4"
+  const tailMatch = cleanTitle.match(/(?:[-–—]\s*|\()(\d+)\s*(?:\)|$)/);
+  if (tailMatch && tailMatch[1]) {
+    const num = parseInt(tailMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  return null;
 };
 
 // Memory caches for API responses to speed up screen rendering and prevent redundant loads
@@ -183,11 +230,16 @@ export const apiService = {
     try {
       const response = await apiClient.get<any>('/messages');
       const messagesList = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-      const mapped = messagesList.map((m: any) => ({
+      const validMessages = messagesList.filter((m: any) => {
+        const audio = m.audioUrl || m.audio_url || m.audio;
+        const isNotPublished = m.isPublished === false || m.is_published === false || m.status === 'draft' || m.status === 'unpublished';
+        return !!audio && !isNotPublished;
+      });
+      const mapped = validMessages.map((m: any) => ({
         messageId: m.id || m.messageId,
         title: m.title || '',
         speaker: m.speaker || '',
-        audioUrl: m.audioUrl || '',
+        audioUrl: m.audioUrl || m.audio_url || m.audio || '',
         duration: m.duration || undefined,
         publishedDate: m.messageDate || m.createdAt || new Date().toISOString(),
         seriesId: m.seriesId,
@@ -196,6 +248,7 @@ export const apiService = {
         viewsCount: m.viewsCount || 0,
         downloadsCount: m.downloadsCount || 0,
         categoryIds: m.messageCategories ? m.messageCategories.map((c: any) => c.categoryId) : [],
+        originalTrackNumber: extractTrackNumber(m.title, m) || undefined,
       }));
       // Sort by publishedDate desc
       mapped.sort((a: Message, b: Message) => new Date(b.publishedDate).getTime() - new Date(a.publishedDate).getTime());
@@ -241,6 +294,7 @@ export const apiService = {
       const messagesList = Array.isArray(response.data) ? response.data : (response.data?.data || []);
       const found = messagesList.find((m: any) => String(m.id) === String(id));
       if (found) {
+        const trackNum = extractTrackNumber(found.title, found);
         return {
           messageId: found.id,
           title: found.title,
@@ -253,6 +307,7 @@ export const apiService = {
           viewsCount: found.viewsCount || 0,
           downloadsCount: found.downloadsCount || 0,
           categoryIds: found.messageCategories ? found.messageCategories.map((c: any) => c.categoryId) : [],
+          originalTrackNumber: trackNum || undefined,
         };
       }
       throw new Error(`Message not found in local list: ${id}`);
@@ -260,6 +315,7 @@ export const apiService = {
       console.warn('Fallback fetching message directly from backend:', error);
       const response = await apiClient.get<any>(`/messages/${id}`);
       const m = response.data?.data || response.data || {};
+      const trackNum = extractTrackNumber(m.title, m);
       return {
         messageId: m.id || m.messageId || id,
         title: m.title || '',
@@ -272,6 +328,7 @@ export const apiService = {
         viewsCount: m.viewsCount || 0,
         downloadsCount: m.downloadsCount || 0,
         categoryIds: m.messageCategories ? m.messageCategories.map((c: any) => c.categoryId) : [],
+        originalTrackNumber: trackNum || undefined,
       };
     }
   },
@@ -319,12 +376,17 @@ export const apiService = {
     try {
       const response = await apiClient.get<any>('/series');
       const list = response.data?.data || response.data || [];
-      const mapped = list.map((s: any) => ({
-        seriesId: s.id || s.seriesId,
-        seriesName: s.name || s.seriesName || '',
-        seriesCoverUrl: s.coverUrl || s.seriesCoverUrl || '',
-        publishedMessagesCount: s.publishedMessagesCount || (s.messages ? s.messages.length : 0),
-      }));
+      const mapped = list
+        .filter((s: any) => {
+          const isNotPublished = s.isPublished === false || s.is_published === false || s.status === 'draft' || s.status === 'unpublished';
+          return !isNotPublished;
+        })
+        .map((s: any) => ({
+          seriesId: s.id || s.seriesId,
+          seriesName: s.name || s.seriesName || '',
+          seriesCoverUrl: s.coverUrl || s.seriesCoverUrl || '',
+          publishedMessagesCount: s.publishedMessagesCount ?? (s.messages ? s.messages.length : 0),
+        }));
       cachedAllSeries = mapped;
       return mapped;
     } catch (error) {
@@ -341,12 +403,17 @@ export const apiService = {
     const params = { pageNumber: page, pageSize, search };
     const response = await apiClient.get<any>('/series/get', { params });
     const list = response.data?.series || response.data?.data || [];
-    const mappedData = list.map((s: any) => ({
-      seriesId: s.id || s.seriesId,
-      seriesName: s.name || s.seriesName || '',
-      seriesCoverUrl: s.coverUrl || s.seriesCoverUrl || '',
-      publishedMessagesCount: s.publishedMessagesCount || (s.messages ? s.messages.length : 0),
-    }));
+    const mappedData = list
+      .filter((s: any) => {
+        const isNotPublished = s.isPublished === false || s.is_published === false || s.status === 'draft' || s.status === 'unpublished';
+        return !isNotPublished;
+      })
+      .map((s: any) => ({
+        seriesId: s.id || s.seriesId,
+        seriesName: s.name || s.seriesName || '',
+        seriesCoverUrl: s.coverUrl || s.seriesCoverUrl || '',
+        publishedMessagesCount: s.publishedMessagesCount ?? (s.messages ? s.messages.length : 0),
+      }));
     return {
       data: mappedData,
       totalCount: response.data?.total || response.data?.totalCount || mappedData.length,
@@ -365,11 +432,16 @@ export const apiService = {
       ]);
       const seriesData = seriesRes.data?.data || seriesRes.data || {};
       const messagesList = messagesRes.data?.data || messagesRes.data?.messages || [];
-      const mappedMessages = messagesList.map((m: any) => ({
+      const validMessages = messagesList.filter((m: any) => {
+        const audio = m.audioUrl || m.audio_url || m.audio;
+        const isNotPublished = m.isPublished === false || m.is_published === false || m.status === 'draft' || m.status === 'unpublished';
+        return !!audio && !isNotPublished;
+      });
+      const mappedMessages = validMessages.map((m: any) => ({
         messageId: m.id || m.messageId,
         title: m.title || '',
         speaker: m.speaker || '',
-        audioUrl: m.audioUrl || '',
+        audioUrl: m.audioUrl || m.audio_url || m.audio || '',
         duration: m.duration || undefined,
         publishedDate: m.messageDate || m.createdAt,
         seriesId: m.seriesId || id,
@@ -378,9 +450,10 @@ export const apiService = {
         viewsCount: m.viewsCount || 0,
         downloadsCount: m.downloadsCount || 0,
         categoryIds: m.messageCategories ? m.messageCategories.map((c: any) => c.categoryId) : [],
+        rawObj: m,
       }));
 
-      const uniqueMessages: Message[] = [];
+      const uniqueMessages: (Message & { rawObj?: any })[] = [];
       const seen = new Set<string>();
       for (const m of mappedMessages) {
         const key = `${m.title.trim().toLowerCase()}|${m.audioUrl.trim().toLowerCase()}`;
@@ -390,10 +463,49 @@ export const apiService = {
         }
       }
 
-      const messagesWithTrackNum = uniqueMessages.map((m, idx) => ({
-        ...m,
-        originalTrackNumber: idx + 1,
-      }));
+      // Sort series messages in chronological / sequential track order (Track 1, Track 2, Track 3...)
+      uniqueMessages.sort((a, b) => {
+        const trackA = extractTrackNumber(a.title, a.rawObj);
+        const trackB = extractTrackNumber(b.title, b.rawObj);
+
+        // If both have extracted track/part numbers, sort by track number ascending
+        if (trackA !== null && trackB !== null && trackA !== trackB) {
+          return trackA - trackB;
+        }
+
+        // If only one has a track number
+        if (trackA !== null && trackB === null) {
+          return -1;
+        }
+        if (trackA === null && trackB !== null) {
+          return 1;
+        }
+
+        // Otherwise sort by publishedDate / messageDate / createdAt ascending (oldest/earliest first)
+        const dateA = a.publishedDate ? new Date(a.publishedDate).getTime() : 0;
+        const dateB = b.publishedDate ? new Date(b.publishedDate).getTime() : 0;
+        if (dateA !== dateB && !isNaN(dateA) && !isNaN(dateB) && dateA > 0 && dateB > 0) {
+          return dateA - dateB;
+        }
+
+        // Fallback: sort by messageId ascending
+        const idA = Number(a.messageId);
+        const idB = Number(b.messageId);
+        if (!isNaN(idA) && !isNaN(idB) && idA !== idB) {
+          return idA - idB;
+        }
+
+        return String(a.messageId).localeCompare(String(b.messageId));
+      });
+
+      const messagesWithTrackNum = uniqueMessages.map((m, idx) => {
+        const parsed = extractTrackNumber(m.title, m.rawObj);
+        const { rawObj, ...cleanMsg } = m;
+        return {
+          ...cleanMsg,
+          originalTrackNumber: parsed || idx + 1,
+        };
+      });
 
       const result = {
         series: {

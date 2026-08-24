@@ -4,6 +4,7 @@ import { useColorScheme, View, StyleSheet, Animated, Text, BackHandler, ToastAnd
 import { useNetInfo } from '@react-native-community/netinfo';
 import { Colors } from '../constants/theme';
 import { AudioProvider, useAudio } from '../contexts/AudioContext';
+import { AlertProvider } from '../contexts/AlertContext';
 import AudioPlayer from '../components/AudioPlayer';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -14,7 +15,9 @@ import { BlurView } from 'expo-blur';
 export default function RootLayout() {
   return (
     <AudioProvider>
-      <AppContent />
+      <AlertProvider>
+        <AppContent />
+      </AlertProvider>
     </AudioProvider>
   );
 }

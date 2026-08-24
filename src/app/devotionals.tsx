@@ -21,7 +21,8 @@ import { apiService, Devotional } from '../services/api';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
 import { useAudio } from '../contexts/AudioContext';
-import { Share2, Calendar, BookOpen, ChevronRight, ChevronLeft, MoreVertical, Copy } from 'lucide-react-native';
+import { useAlert } from '../contexts/AlertContext';
+import { Share2, Calendar, BookOpen, ChevronRight, ChevronLeft, MoreVertical, Copy, Play, Pause } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import BlurHeader from '../components/BlurHeader';
 
@@ -127,7 +128,8 @@ let todayDevotionalCache: Devotional | null = null;
 
 export default function DevotionalsScreen() {
   const systemScheme = useColorScheme();
-  const { themeMode } = useAudio();
+  const { themeMode, currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
+  const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
   const themeColors = Colors[activeScheme === 'dark' ? 'dark' : 'light'];
@@ -144,19 +146,180 @@ export default function DevotionalsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
+  const isDevotionalPlaying = (dev: Devotional | null) => {
+    if (!dev || !currentTrack) return false;
+    return String(currentTrack.messageId) === `devotional_${dev.devotionalId}` && isPlaying;
+  };
+
+  const isDevotionalCurrentTrack = (dev: Devotional | null) => {
+    if (!dev || !currentTrack) return false;
+    return String(currentTrack.messageId) === `devotional_${dev.devotionalId}`;
+  };
+
+  const SUPABASE_PROJECT_BASE = 'https://jerpxlkgyrmsjmykgnbu.supabase.co/storage/v1/object/public';
+  const BUCKET_NAMES = ['Cp devotional', 'cp-devotional', 'cp_devotional', 'devotionals', 'devotional'];
+  const [audioCheckingId, setAudioCheckingId] = useState<string | number | null>(null);
+
+  const handlePlayDevotional = async (dev: Devotional) => {
+    if (!dev) return;
+
+    if (isDevotionalCurrentTrack(dev)) {
+      await togglePlayPause();
+      return;
+    }
+
+    // 1. Determine candidate audio URLs
+    const candidateUrls: string[] = [];
+    if (dev.audioUrl) {
+      candidateUrls.push(dev.audioUrl);
+    }
+    
+    const dateKey = dev.date ? dev.date.split('T')[0] : '';
+    const fileNames: string[] = [];
+    
+    // Topic slug variations
+    const cleanTopic = (dev.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const cleanTopicHyphen = (dev.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const cleanTopicCamel = (dev.title || '').replace(/[^a-zA-Z0-9]+/g, '');
+
+    if (dateKey) {
+      const parts = dateKey.split('-');
+      const yyyy = parts[0] || '';
+      const mm = parts[1] || '';
+      const dd = parts[2] || '';
+      
+      const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+      const monthShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const mIndex = parseInt(mm, 10) - 1;
+      const monthFull = mIndex >= 0 && mIndex < 12 ? monthNames[mIndex] : '';
+      const monthStr = mIndex >= 0 && mIndex < 12 ? monthShort[mIndex] : '';
+
+      const topics = [cleanTopic, cleanTopicHyphen, cleanTopicCamel, ''].filter((v, i, a) => a.indexOf(v) === i);
+
+      for (const t of topics) {
+        const topicSuffix = t ? `_${t}` : '';
+        const topicSuffixHyphen = t ? `-${t}` : '';
+
+        // 1. Standard: CP_Devotional_{yyyy}_{mm}_{dd}_{topic}.mp3 & variations
+        fileNames.push(`CP_Devotional_${yyyy}_${mm}_${dd}${topicSuffix}.mp3`);
+        fileNames.push(`CP_Devotional_${yyyy}-${mm}-${dd}${topicSuffix}.mp3`);
+        fileNames.push(`cp_devotional_${yyyy}_${mm}_${dd}${topicSuffix}.mp3`);
+        fileNames.push(`cp_devotional_${yyyy}-${mm}-${dd}${topicSuffix}.mp3`);
+        fileNames.push(`devotional_${yyyy}_${mm}_${dd}${topicSuffix}.mp3`);
+        fileNames.push(`devotional_${yyyy}-${mm}-${dd}${topicSuffix}.mp3`);
+
+        // 2. Date First: {yyyy}-{mm}-{dd}_{topic}.mp3 & {yyyy}_{mm}_{dd}_{topic}.mp3
+        fileNames.push(`${yyyy}-${mm}-${dd}${topicSuffix}.mp3`);
+        fileNames.push(`${yyyy}_${mm}_${dd}${topicSuffix}.mp3`);
+        fileNames.push(`${yyyy}-${mm}-${dd}${topicSuffixHyphen}.mp3`);
+
+        // 3. Date Subfolders: {yyyy}/{mm}/{dd}_{topic}.mp3 & {yyyy}/{mm}/{dd}.mp3
+        fileNames.push(`${yyyy}/${mm}/${dd}${topicSuffix}.mp3`);
+        fileNames.push(`${yyyy}/${mm}/${dd}.mp3`);
+        fileNames.push(`${yyyy}/${mm}/devotional_${dd}${topicSuffix}.mp3`);
+
+        // 4. Day-Month-Year: {dd}_{month}_{yyyy}_{topic}.mp3
+        if (monthFull) {
+          fileNames.push(`${dd}_${monthFull}_${yyyy}${topicSuffix}.mp3`);
+          fileNames.push(`${dd}-${monthFull}-${yyyy}${topicSuffix}.mp3`);
+        }
+        if (monthStr) {
+          fileNames.push(`${dd}_${monthStr}_${yyyy}${topicSuffix}.mp3`);
+          fileNames.push(`${dd}-${monthStr}-${yyyy}${topicSuffix}.mp3`);
+        }
+        fileNames.push(`${dd}_${mm}_${yyyy}${topicSuffix}.mp3`);
+        fileNames.push(`${dd}-${mm}-${yyyy}${topicSuffix}.mp3`);
+
+        // 5. Topic-Date: {topic}_{dd}{month}.mp3
+        if (t) {
+          if (monthFull) fileNames.push(`${t}_${dd}${monthFull}.mp3`);
+          if (monthStr) fileNames.push(`${t}_${dd}${monthStr}.mp3`);
+          fileNames.push(`${t}_${dd}_${mm}.mp3`);
+          fileNames.push(`${t}_${yyyy}_${mm}_${dd}.mp3`);
+          fileNames.push(`${t}_${yyyy}-${mm}-${dd}.mp3`);
+        }
+      }
+
+      // Base legacy patterns
+      fileNames.push(`devotional_${dateKey}.mp3`);
+      fileNames.push(`${dateKey}.mp3`);
+    }
+
+    if (dev.devotionalId) {
+      fileNames.push(`devotional_${dev.devotionalId}.mp3`);
+      fileNames.push(`${dev.devotionalId}.mp3`);
+    }
+
+    // Deduplicate fileNames
+    const uniqueFileNames = Array.from(new Set(fileNames));
+
+    for (const bucket of BUCKET_NAMES) {
+      const encodedBucket = encodeURIComponent(bucket);
+      for (const fileName of uniqueFileNames) {
+        candidateUrls.push(`${SUPABASE_PROJECT_BASE}/${encodedBucket}/${fileName}`);
+      }
+    }
+
+    setAudioCheckingId(dev.devotionalId);
+    let validAudioUri: string | null = null;
+
+    for (const url of candidateUrls) {
+      try {
+        const res = await fetch(url, { method: 'HEAD' });
+        if (res.ok && res.status >= 200 && res.status < 300) {
+          validAudioUri = url;
+          break;
+        }
+      } catch (err) {
+        console.warn('Audio check error for url:', url, err);
+      }
+    }
+
+    setAudioCheckingId(null);
+
+    if (!validAudioUri) {
+      showAlert({
+        title: 'Audio Unavailable',
+        message: 'Audio for this devotional has not been uploaded yet.',
+        buttons: [{ text: 'OK', style: 'primary' }],
+      });
+      return;
+    }
+
+    const devotionalTrack = {
+      messageId: `devotional_${dev.devotionalId}`,
+      title: dev.title,
+      speaker: 'Spirit of Faith Devotional',
+      audioUrl: validAudioUri,
+      coverUrl: dev.thumbnailUrl || undefined,
+      publishedDate: dev.date || new Date().toISOString(),
+      seriesName: 'Daily Devotional',
+    };
+
+    await playTrack(devotionalTrack, [devotionalTrack]);
+  };
+
   const handleCopyDevotional = async (dev: Devotional) => {
     if (!dev) return;
     const cleanContent = dev.content ? cleanContentText(dev.content) : '';
     const textToCopy = `${dev.title}\n${dev.date || ''}\n\nBible Reading: ${dev.bibleReading || ''}\n\n${cleanContent}\n\n${dev.confession || dev.prayer || ''}`;
     await Clipboard.setStringAsync(textToCopy);
-    Alert.alert('Copied', 'Devotional text copied to clipboard.');
+    showAlert({
+      title: 'Copied',
+      message: 'Devotional text copied to clipboard.',
+      buttons: [{ text: 'OK', style: 'primary' }],
+    });
   };
 
   const handleCopyScripture = async (dev: Devotional) => {
     if (!dev || !dev.bibleReading) return;
     const textToCopy = `${dev.bibleReading}${dev.bibleVerse ? `\n"${dev.bibleVerse}"` : ''}`;
     await Clipboard.setStringAsync(textToCopy);
-    Alert.alert('Copied', 'Scripture reading copied to clipboard.');
+    showAlert({
+      title: 'Copied',
+      message: 'Scripture reading copied to clipboard.',
+      buttons: [{ text: 'OK', style: 'primary' }],
+    });
   };
 
   const onRefresh = async () => {
@@ -425,6 +588,24 @@ export default function DevotionalsScreen() {
               Options
             </Text>
 
+            {/* Play / Pause option */}
+            <TouchableOpacity
+              style={styles.popoverMenuItem}
+              onPress={() => {
+                handlePlayDevotional(activeDev);
+                setShowMenu(false);
+              }}
+            >
+              {isDevotionalPlaying(activeDev) ? (
+                <Pause size={16} color={themeColors.primary} style={{ marginRight: 10 }} />
+              ) : (
+                <Play size={16} color={themeColors.primary} style={{ marginRight: 10 }} />
+              )}
+              <Text style={[styles.popoverMenuText, { color: themeColors.text }]}>
+                {isDevotionalPlaying(activeDev) ? 'Pause Audio' : 'Play Devotional Audio'}
+              </Text>
+            </TouchableOpacity>
+
             {/* Share option */}
             <TouchableOpacity
               style={styles.popoverMenuItem}
@@ -501,9 +682,34 @@ export default function DevotionalsScreen() {
                   <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
                     {todayDevotional.date}
                   </Text>
-                  <TouchableOpacity onPress={() => handleShare(todayDevotional)} style={styles.shareButton}>
-                    <Share2 size={16} color={themeColors.primary} />
-                  </TouchableOpacity>
+                  
+                  <View style={styles.headerActionsGroup}>
+                    <TouchableOpacity 
+                      onPress={() => handlePlayDevotional(todayDevotional)} 
+                      style={[
+                        styles.actionIconButton,
+                        isDevotionalPlaying(todayDevotional) && { backgroundColor: themeColors.primary + '18' }
+                      ]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      disabled={audioCheckingId === todayDevotional.devotionalId}
+                    >
+                      {audioCheckingId === todayDevotional.devotionalId ? (
+                        <ActivityIndicator size="small" color={themeColors.primary} />
+                      ) : isDevotionalPlaying(todayDevotional) ? (
+                        <Pause size={18} color={themeColors.primary} />
+                      ) : (
+                        <Play size={18} color={themeColors.primary} fill={isDevotionalCurrentTrack(todayDevotional) ? themeColors.primary : 'none'} />
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      onPress={() => handleShare(todayDevotional)} 
+                      style={styles.actionIconButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Share2 size={18} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
@@ -584,9 +790,34 @@ export default function DevotionalsScreen() {
                   <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
                     {selectedDevotional.date}
                   </Text>
-                  <TouchableOpacity onPress={() => handleShare(selectedDevotional)} style={styles.shareButton}>
-                    <Share2 size={16} color={themeColors.primary} />
-                  </TouchableOpacity>
+                  
+                  <View style={styles.headerActionsGroup}>
+                    <TouchableOpacity 
+                      onPress={() => handlePlayDevotional(selectedDevotional)} 
+                      style={[
+                        styles.actionIconButton,
+                        isDevotionalPlaying(selectedDevotional) && { backgroundColor: themeColors.primary + '18' }
+                      ]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      disabled={audioCheckingId === selectedDevotional.devotionalId}
+                    >
+                      {audioCheckingId === selectedDevotional.devotionalId ? (
+                        <ActivityIndicator size="small" color={themeColors.primary} />
+                      ) : isDevotionalPlaying(selectedDevotional) ? (
+                        <Pause size={18} color={themeColors.primary} />
+                      ) : (
+                        <Play size={18} color={themeColors.primary} fill={isDevotionalCurrentTrack(selectedDevotional) ? themeColors.primary : 'none'} />
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      onPress={() => handleShare(selectedDevotional)} 
+                      style={styles.actionIconButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Share2 size={18} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
 
@@ -858,6 +1089,18 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 14,
     marginLeft: 6,
+  },
+  headerActionsGroup: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionIconButton: {
+    padding: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   shareButton: {
     marginLeft: 'auto',

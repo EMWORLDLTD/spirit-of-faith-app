@@ -8,16 +8,18 @@ import {
   Dimensions,
   Platform,
   Alert,
-  Modal,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAudio } from '../contexts/AudioContext';
+import { useAlert } from '../contexts/AlertContext';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import BlurHeader from '../components/BlurHeader';
+import SwipeableModal from '../components/SwipeableModal';
 import {
   Settings,
   Calendar,
@@ -25,7 +27,6 @@ import {
   CreditCard,
   ChevronRight,
   Copy,
-  X,
   Info,
 } from 'lucide-react-native';
 
@@ -33,20 +34,23 @@ const { width } = Dimensions.get('window');
 
 const CHURCH_ACCOUNTS = [
   {
-    bankName: 'Guaranty Trust Bank (GTB)',
-    accountName: 'Christ Pavilion Church',
-    accountNumber: '0124578963',
+    bankName: 'Zenith Bank',
+    accountName: 'Christ Pavilion Gospel Mission',
+    accountNumber: '1228557161',
+    logo: require('../../assets/images/banks/zenith.png'),
   },
   {
-    bankName: 'Zenith Bank',
-    accountName: 'Christ Pavilion (Media Ministry)',
-    accountNumber: '1012345678',
+    bankName: 'Wema Bank',
+    accountName: 'Christ Pavilion Gospel Mission',
+    accountNumber: '0450673968',
+    logo: require('../../assets/images/banks/wema.png'),
   },
 ];
 
 export default function MoreScreen() {
   const systemScheme = useColorScheme();
   const { themeMode } = useAudio();
+  const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
   
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
@@ -56,7 +60,11 @@ export default function MoreScreen() {
 
   const handleCopyAccount = async (accountNumber: string) => {
     await Clipboard.setStringAsync(accountNumber);
-    Alert.alert('Copied', 'Account number copied to clipboard.');
+    showAlert({
+      title: 'Copied',
+      message: 'Account number copied to clipboard.',
+      buttons: [{ text: 'OK', style: 'primary' }],
+    });
   };
 
   const bgColors: [string, string, string] = activeScheme === 'dark'
@@ -173,50 +181,38 @@ export default function MoreScreen() {
       </ScrollView>
 
       {/* GIVING ACCOUNT DETAILS MODAL */}
-      <Modal
-        animationType="slide"
-        transparent={true}
+      <SwipeableModal
         visible={givingModalVisible}
-        onRequestClose={() => setGivingModalVisible(false)}
+        onClose={() => setGivingModalVisible(false)}
+        title="Church Giving Accounts"
+        subtitle="You can support the church ministry by transferring tithes, offerings, or donations to any of the accounts below:"
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: themeColors.background, borderColor: themeColors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: themeColors.text }]}>Church Giving Accounts</Text>
+        {CHURCH_ACCOUNTS.map((acc, index) => (
+          <View 
+            key={index}
+            style={[styles.accountCard, { backgroundColor: themeColors.backgroundElement, borderColor: themeColors.border }]}
+          >
+            <View style={styles.accountCardHeader}>
+              <View style={styles.accountBankInfo}>
+                <View style={styles.accountLogoWrapper}>
+                  <Image source={acc.logo} style={styles.accountLogo} resizeMode="contain" />
+                </View>
+                <Text style={[styles.accountBank, { color: themeColors.primary }]}>{acc.bankName}</Text>
+              </View>
               <TouchableOpacity 
-                style={styles.closeModalBtn} 
-                onPress={() => setGivingModalVisible(false)}
+                style={styles.copyBtn} 
+                onPress={() => handleCopyAccount(acc.accountNumber)}
               >
-                <X size={20} color={themeColors.text} />
+                <Copy size={16} color={themeColors.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={[styles.modalSubtitle, { color: themeColors.textSecondary }]}>
-              You can support the church ministry by transferring tithes, offerings, or donations to any of the accounts below:
-            </Text>
-
-            {CHURCH_ACCOUNTS.map((acc, index) => (
-              <View 
-                key={index}
-                style={[styles.accountCard, { backgroundColor: themeColors.backgroundElement, borderColor: themeColors.border }]}
-              >
-                <View style={styles.accountCardHeader}>
-                  <Text style={[styles.accountBank, { color: themeColors.primary }]}>{acc.bankName}</Text>
-                  <TouchableOpacity 
-                    style={styles.copyBtn} 
-                    onPress={() => handleCopyAccount(acc.accountNumber)}
-                  >
-                    <Copy size={16} color={themeColors.primary} />
-                  </TouchableOpacity>
-                </View>
-                <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Number:</Text>
-                <Text style={[styles.accountNumber, { color: themeColors.text }]}>{acc.accountNumber}</Text>
-                <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Name:</Text>
-                <Text style={[styles.accountName, { color: themeColors.text }]}>{acc.accountName}</Text>
-              </View>
-            ))}
+            <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Number:</Text>
+            <Text style={[styles.accountNumber, { color: themeColors.text }]}>{acc.accountNumber}</Text>
+            <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Name:</Text>
+            <Text style={[styles.accountName, { color: themeColors.text }]}>{acc.accountName}</Text>
           </View>
-        </View>
-      </Modal>
+        ))}
+      </SwipeableModal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -361,36 +357,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    padding: 24,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  closeModalBtn: {
-    padding: 6,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 20,
-  },
   accountCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -401,7 +367,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+  },
+  accountBankInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  accountLogoWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  accountLogo: {
+    width: '100%',
+    height: '100%',
   },
   accountBank: {
     fontSize: 15,

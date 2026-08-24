@@ -9,7 +9,6 @@ import {
   Image,
   Dimensions,
   RefreshControl,
-  Modal,
   Platform,
   Alert,
   TextInput,
@@ -21,8 +20,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import { apiService, Devotional, Message, ChurchEvent, Category, Series } from '../services/api';
 import { useAudio } from '../contexts/AudioContext';
+import { useAlert } from '../contexts/AlertContext';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
+import SwipeableModal from '../components/SwipeableModal';
 import {
   BookOpen,
   Play,
@@ -39,21 +40,29 @@ import {
   Search,
   Sun,
   Moon,
+  Music,
 } from 'lucide-react-native';
+
+type ExtendedSeries = Series & {
+  speaker?: string;
+  latestDate?: string;
+};
 
 const { width } = Dimensions.get('window');
 
 // Church Account Details for Giving
 const CHURCH_ACCOUNTS = [
   {
-    bankName: 'Guaranty Trust Bank (GTB)',
-    accountName: 'Christ Pavilion Church',
-    accountNumber: '0124578963',
+    bankName: 'Zenith Bank',
+    accountName: 'Christ Pavilion Gospel Mission',
+    accountNumber: '1228557161',
+    logo: require('../../assets/images/banks/zenith.png'),
   },
   {
-    bankName: 'Zenith Bank',
-    accountName: 'Christ Pavilion (Media Ministry)',
-    accountNumber: '1012345678',
+    bankName: 'Wema Bank',
+    accountName: 'Christ Pavilion Gospel Mission',
+    accountNumber: '0450673968',
+    logo: require('../../assets/images/banks/wema.png'),
   },
 ];
 
@@ -140,6 +149,7 @@ const EventSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim
 export default function HomeScreen() {
   const systemScheme = useColorScheme();
   const { playTrack, themeMode, setThemeMode, isDownloaded } = useAudio();
+  const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
 
   const pathname = usePathname();
@@ -149,7 +159,7 @@ export default function HomeScreen() {
 
   // Core content states
   const [devotional, setDevotional] = useState<Devotional | null>(null);
-  const [recentMessages, setRecentMessages] = useState<Message[]>([]);
+  const [recentSeries, setRecentSeries] = useState<ExtendedSeries[]>([]);
   const [allMessages, setAllMessages] = useState<Message[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<ChurchEvent[]>([]);
 
@@ -205,24 +215,86 @@ export default function HomeScreen() {
         setDevotional(devResult.value);
       }
       
-      let allSeries: Series[] = [];
-      if (seriesResult.status === 'fulfilled') {
-        allSeries = seriesResult.value;
-      }
+      const allSeries: Series[] = seriesResult.status === 'fulfilled' ? seriesResult.value : [];
+      const messagesData: Message[] = msgResult.status === 'fulfilled' ? msgResult.value : [];
 
-      if (msgResult.status === 'fulfilled') {
-        const mappedMsgs = msgResult.value.map((m: Message) => {
-          if (!m.coverUrl && m.seriesId) {
-            const series = allSeries.find(s => String(s.seriesId) === String(m.seriesId));
-            if (series && series.seriesCoverUrl) {
-              return { ...m, coverUrl: series.seriesCoverUrl };
+      const mappedMsgs = messagesData.map((m: Message) => {
+        if (!m.coverUrl && m.seriesId) {
+          const series = allSeries.find(s => String(s.seriesId) === String(m.seriesId));
+          if (series && series.seriesCoverUrl) {
+            return { ...m, coverUrl: series.seriesCoverUrl };
+          }
+        }
+        return m;
+      });
+      setAllMessages(mappedMsgs);
+
+      // Build recent series items
+      const seriesListWithMeta: ExtendedSeries[] = allSeries.map((s: Series) => {
+        const sMessages = mappedMsgs.filter((m: Message) => String(m.seriesId) === String(s.seriesId));
+        const count = sMessages.length;
+        const speaker = sMessages.length > 0 ? sMessages[0].speaker : 'Christ Pavilion';
+        const latestDate = sMessages.length > 0 ? sMessages[0].publishedDate : undefined;
+        return {
+          ...s,
+          publishedMessagesCount: count || s.publishedMessagesCount || 0,
+          speaker,
+          latestDate,
+        };
+      });
+
+      // Group and sort distinct series by recent track uploads:
+      const orderedSeries: ExtendedSeries[] = [];
+      const seenSeriesIds = new Set<string>();
+
+      // 1. Iterate through recent messages in chronological order to find newest series
+      for (const msg of mappedMsgs) {
+        if (!msg.audioUrl) continue;
+        if (msg.seriesId) {
+          const sIdStr = String(msg.seriesId);
+          if (!seenSeriesIds.has(sIdStr)) {
+            seenSeriesIds.add(sIdStr);
+            const foundSeries = seriesListWithMeta.find(s => String(s.seriesId) === sIdStr);
+            if (foundSeries && (foundSeries.publishedMessagesCount || 0) > 0) {
+              orderedSeries.push(foundSeries);
+            } else if (!foundSeries) {
+              orderedSeries.push({
+                seriesId: msg.seriesId,
+                seriesName: msg.seriesName || msg.title,
+                seriesCoverUrl: msg.coverUrl,
+                publishedMessagesCount: 1,
+                speaker: msg.speaker || 'Christ Pavilion',
+                latestDate: msg.publishedDate,
+              });
             }
           }
-          return m;
-        });
-        setAllMessages(mappedMsgs);
-        setRecentMessages(mappedMsgs.slice(0, 5));
+        } else {
+          // Standalone message treated as a single series
+          const sIdStr = `single_${msg.messageId}`;
+          if (!seenSeriesIds.has(sIdStr)) {
+            seenSeriesIds.add(sIdStr);
+            orderedSeries.push({
+              seriesId: sIdStr,
+              seriesName: msg.title,
+              seriesCoverUrl: msg.coverUrl,
+              publishedMessagesCount: 1,
+              speaker: msg.speaker || 'Christ Pavilion',
+              latestDate: msg.publishedDate,
+            });
+          }
+        }
       }
+
+      // 2. Append any remaining series from seriesData that have published messages
+      for (const s of seriesListWithMeta) {
+        if (!seenSeriesIds.has(String(s.seriesId)) && (s.publishedMessagesCount || 0) > 0) {
+          seenSeriesIds.add(String(s.seriesId));
+          orderedSeries.push(s);
+        }
+      }
+
+      setRecentSeries(orderedSeries.slice(0, 6));
+
       if (eventResult.status === 'fulfilled') {
         setUpcomingEvents(eventResult.value.slice(0, 3)); // show top 3
       }
@@ -248,36 +320,41 @@ export default function HomeScreen() {
     fetchData(true);
   };
 
-  const handleSelectSermon = (track: Message) => {
-    router.push({
-      pathname: '/teachings',
-      params: {
-        autoSelectSeriesId: track.seriesId ? String(track.seriesId) : undefined,
-        autoSelectMessageId: String(track.messageId),
-      }
-    });
+  const handleSelectSeriesItem = (series: ExtendedSeries) => {
+    if (String(series.seriesId).startsWith('single_')) {
+      const msgId = String(series.seriesId).replace('single_', '');
+      router.push({
+        pathname: '/teachings',
+        params: {
+          autoSelectMessageId: msgId,
+        }
+      });
+    } else {
+      router.push({
+        pathname: '/teachings',
+        params: {
+          autoSelectSeriesId: String(series.seriesId),
+        }
+      });
+    }
   };
 
-  // Play Live Radio (dummy stream linked to global player)
+  // Live Radio (Coming Soon)
   const handlePlayLiveRadio = () => {
-    const liveRadioTrack: Message = {
-      messageId: -999, // Special identifier for radio
-      title: 'Live Service Broadcast',
-      speaker: 'Christ Pavilion Live',
-      audioUrl: 'http://stream.zeno.fm/0w8cz4s6e0hvv', // ZenoRadio stream url
-      publishedDate: new Date().toISOString(),
-    };
-    playTrack(liveRadioTrack, [liveRadioTrack]);
-    Alert.alert('Live Radio Started', 'Connecting to Christ Pavilion Live Broadcast...');
+    showAlert({
+      title: 'Live Radio — Coming Soon',
+      message: 'Christ Pavilion Live Radio broadcast is coming soon. Stay tuned for spirit-filled streaming!',
+      buttons: [{ text: 'OK', style: 'primary' }],
+    });
   };
 
   const handleCopyAccount = async (accountNumber: string) => {
     await Clipboard.setStringAsync(accountNumber);
-    if (Platform.OS === 'android') {
-      Alert.alert('Copied', 'Account number copied to clipboard.');
-    } else {
-      Alert.alert('Copied', 'Account number copied to clipboard.');
-    }
+    showAlert({
+      title: 'Copied',
+      message: 'Account number copied to clipboard.',
+      buttons: [{ text: 'OK', style: 'primary' }],
+    });
   };
 
 
@@ -480,8 +557,12 @@ export default function HomeScreen() {
                       }
                     ]}
                     onPress={handlePlayLiveRadio}
+                    activeOpacity={0.7}
                   >
                     <GlossyOverlay isDark={activeScheme === 'dark'} />
+                    <View style={styles.soonBadge}>
+                      <Text style={styles.soonBadgeText}>SOON</Text>
+                    </View>
                     <View style={[styles.tileIconContainer, { backgroundColor: 'rgba(225, 29, 72, 0.1)' }]}>
                       <Radio size={22} color="#e11d48" />
                     </View>
@@ -553,15 +634,15 @@ export default function HomeScreen() {
 
                 {loading ? (
                   <MessageSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
-                ) : recentMessages.length > 0 ? (
+                ) : recentSeries.length > 0 ? (
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.horizontalScroll}
                   >
-                    {recentMessages.map((msg) => (
+                    {recentSeries.map((series) => (
                       <TouchableOpacity
-                        key={msg.messageId}
+                        key={String(series.seriesId)}
                         style={[
                           styles.messageCard, 
                           { 
@@ -573,28 +654,23 @@ export default function HomeScreen() {
                             elevation: 1,
                           }
                         ]}
-                        onPress={() => handleSelectSermon(msg)}
+                        onPress={() => handleSelectSeriesItem(series)}
                       >
                         <GlossyOverlay isDark={activeScheme === 'dark'} />
                         <View style={{ position: 'relative' }}>
-                          {msg.coverUrl ? (
-                            <Image source={{ uri: msg.coverUrl }} style={styles.audioThumbnail} />
+                          {series.seriesCoverUrl ? (
+                            <Image source={{ uri: series.seriesCoverUrl }} style={styles.audioThumbnail} />
                           ) : (
                             <View style={[styles.audioThumbnail, { backgroundColor: themeColors.primary }]}>
-                              <Play size={24} color="#ffffff" />
-                            </View>
-                          )}
-                          {isDownloaded(msg) && (
-                            <View style={styles.downloadBadgeMini}>
-                              <Check size={10} color="#ffffff" strokeWidth={3} />
+                              <Music size={24} color="#ffffff" />
                             </View>
                           )}
                         </View>
                         <Text style={[styles.messageTitle, { color: themeColors.text }]} numberOfLines={2}>
-                          {msg.title}
+                          {series.seriesName}
                         </Text>
-                        <Text style={[styles.messageSpeaker, { color: themeColors.textSecondary }]}>
-                          {msg.speaker || 'Pastor'}
+                        <Text style={[styles.messageSpeaker, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                          {series.publishedMessagesCount ? `${series.publishedMessagesCount} ${series.publishedMessagesCount === 1 ? 'track' : 'tracks'}` : (series.speaker || 'Christ Pavilion')}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -672,115 +748,88 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       {/* GIVING ACCOUNT DETAILS MODAL */}
-      <Modal
-        animationType="slide"
-        transparent={true}
+      <SwipeableModal
         visible={givingModalVisible}
-        onRequestClose={() => setGivingModalVisible(false)}
+        onClose={() => setGivingModalVisible(false)}
+        title="Church Giving Accounts"
+        subtitle="You can support the church ministry by transferring tithes, offerings, or donations to any of the accounts below:"
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: themeColors.background, borderColor: themeColors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: themeColors.text }]}>Church Giving Accounts</Text>
+        {CHURCH_ACCOUNTS.map((acc, index) => (
+          <View 
+            key={index}
+            style={[styles.accountCard, { backgroundColor: themeColors.backgroundElement, borderColor: themeColors.border }]}
+          >
+            <View style={styles.accountCardHeader}>
+              <View style={styles.accountBankInfo}>
+                <View style={styles.accountLogoWrapper}>
+                  <Image source={acc.logo} style={styles.accountLogo} resizeMode="contain" />
+                </View>
+                <Text style={[styles.accountBank, { color: themeColors.primary }]}>{acc.bankName}</Text>
+              </View>
               <TouchableOpacity 
-                style={styles.closeModalBtn} 
-                onPress={() => setGivingModalVisible(false)}
+                style={styles.copyBtn} 
+                onPress={() => handleCopyAccount(acc.accountNumber)}
               >
-                <X size={20} color={themeColors.text} />
+                <Copy size={16} color={themeColors.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={[styles.modalSubtitle, { color: themeColors.textSecondary }]}>
-              You can support the church ministry by transferring tithes, offerings, or donations to any of the accounts below:
-            </Text>
-
-            {CHURCH_ACCOUNTS.map((acc, index) => (
-              <View 
-                key={index}
-                style={[styles.accountCard, { backgroundColor: themeColors.backgroundElement, borderColor: themeColors.border }]}
-              >
-                <View style={styles.accountCardHeader}>
-                  <Text style={[styles.accountBank, { color: themeColors.primary }]}>{acc.bankName}</Text>
-                  <TouchableOpacity 
-                    style={styles.copyBtn} 
-                    onPress={() => handleCopyAccount(acc.accountNumber)}
-                  >
-                    <Copy size={16} color={themeColors.primary} />
-                  </TouchableOpacity>
-                </View>
-                <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Number:</Text>
-                <Text style={[styles.accountNumber, { color: themeColors.text }]}>{acc.accountNumber}</Text>
-                <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Name:</Text>
-                <Text style={[styles.accountName, { color: themeColors.text }]}>{acc.accountName}</Text>
-              </View>
-            ))}
+            <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Number:</Text>
+            <Text style={[styles.accountNumber, { color: themeColors.text }]}>{acc.accountNumber}</Text>
+            <Text style={[styles.accountLabel, { color: themeColors.textSecondary }]}>Account Name:</Text>
+            <Text style={[styles.accountName, { color: themeColors.text }]}>{acc.accountName}</Text>
           </View>
-        </View>
-      </Modal>
+        ))}
+      </SwipeableModal>
 
       {/* ANNOUNCEMENTS MODAL */}
-      <Modal
-        animationType="slide"
-        transparent={true}
+      <SwipeableModal
         visible={announcementsModalVisible}
-        onRequestClose={() => setAnnouncementsModalVisible(false)}
+        onClose={() => setAnnouncementsModalVisible(false)}
+        title="Announcements"
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: themeColors.background, borderColor: themeColors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: themeColors.text }]}>Announcements</Text>
-              <TouchableOpacity 
-                style={styles.closeModalBtn} 
-                onPress={() => setAnnouncementsModalVisible(false)}
-              >
-                <X size={20} color={themeColors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.announcementsList} showsVerticalScrollIndicator={false}>
-              <View style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}>
-                <Text style={[styles.announcementTitle, { color: themeColors.text }]}>Welcome to Christ Pavilion!</Text>
-                <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>June 5, 2026</Text>
-                <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]}>
-                  We are delighted to welcome you to our official mobile app. Browse daily devotionals, stream teachings, and keep up with our branches!
-                </Text>
-              </View>
-
-              {upcomingEvents.length > 0 ? (
-                upcomingEvents.map((evt) => (
-                  <View 
-                    key={evt.eventId}
-                    style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}
-                  >
-                    <Text style={[styles.announcementTitle, { color: themeColors.text }]}>{evt.title}</Text>
-                    <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>
-                      Starts: {new Date(evt.startDate).toLocaleDateString()}
-                    </Text>
-                    <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]} numberOfLines={2}>
-                      {evt.description}
-                    </Text>
-                    <TouchableOpacity 
-                      style={styles.eventLink}
-                      onPress={() => {
-                        setAnnouncementsModalVisible(false);
-                        router.push('/events');
-                      }}
-                    >
-                      <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>View Details</Text>
-                      <ChevronRight size={14} color={themeColors.primary} />
-                    </TouchableOpacity>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.center}>
-                  <Text style={{ color: themeColors.textSecondary, fontStyle: 'italic', marginVertical: 20 }}>
-                    No announcements at this time.
-                  </Text>
-                </View>
-              )}
-            </ScrollView>
+        <ScrollView style={styles.announcementsList} showsVerticalScrollIndicator={false}>
+          <View style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}>
+            <Text style={[styles.announcementTitle, { color: themeColors.text }]}>Welcome to Christ Pavilion!</Text>
+            <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>June 5, 2026</Text>
+            <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]}>
+              We are delighted to welcome you to our official mobile app. Browse daily devotionals, stream teachings, and keep up with our branches!
+            </Text>
           </View>
-        </View>
-      </Modal>
+
+          {upcomingEvents.length > 0 ? (
+            upcomingEvents.map((evt) => (
+              <View 
+                key={evt.eventId}
+                style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}
+              >
+                <Text style={[styles.announcementTitle, { color: themeColors.text }]}>{evt.title}</Text>
+                <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>
+                  Starts: {new Date(evt.startDate).toLocaleDateString()}
+                </Text>
+                <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]} numberOfLines={2}>
+                  {evt.description}
+                </Text>
+                <TouchableOpacity 
+                  style={styles.eventLink}
+                  onPress={() => {
+                    setAnnouncementsModalVisible(false);
+                    router.push('/events');
+                  }}
+                >
+                  <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>View Details</Text>
+                  <ChevronRight size={14} color={themeColors.primary} />
+                </TouchableOpacity>
+              </View>
+            ))
+          ) : (
+            <View style={styles.center}>
+              <Text style={{ color: themeColors.textSecondary, fontStyle: 'italic', marginVertical: 20 }}>
+                No announcements at this time.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      </SwipeableModal>
     </LinearGradient>
   );
 }
@@ -947,6 +996,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     textAlign: 'center',
   },
+  soonBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(225, 29, 72, 0.12)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: 'rgba(225, 29, 72, 0.3)',
+    zIndex: 2,
+  },
+  soonBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#e11d48',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1049,36 +1117,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginVertical: 10,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    padding: 24,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  closeModalBtn: {
-    padding: 6,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 20,
-  },
   accountCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -1090,6 +1128,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  accountBankInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  accountLogoWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  accountLogo: {
+    width: '100%',
+    height: '100%',
   },
   accountBank: {
     fontSize: 15,

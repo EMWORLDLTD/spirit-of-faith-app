@@ -17,8 +17,9 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiService, Series, Message, Category } from '../services/api';
+import { apiService, Series, Message } from '../services/api';
 import { useAudio } from '../contexts/AudioContext';
+import { useAlert } from '../contexts/AlertContext';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -30,7 +31,7 @@ const { width } = Dimensions.get('window');
 
 type ExtendedSeries = Series & {
   speaker?: string;
-  categories?: Category[];
+  latestDate?: number;
 };
 
 const GlossyOverlay = ({ isDark }: { isDark: boolean }) => (
@@ -134,11 +135,12 @@ const TrackListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulse
   </View>
 );
 
-let teachingsMainCache: { categories: Category[]; seriesList: ExtendedSeries[] } | null = null;
+let teachingsMainCache: { seriesList: ExtendedSeries[] } | null = null;
 
 export default function TeachingsScreen() {
   const systemScheme = useColorScheme();
   const { playTrack, showActionSheet, currentTrack, isPlaying, themeMode, isDownloaded, downloadTrack, downloadProgress, deleteDownloadedTrack, saveTrackToDevice, shareTrack } = useAudio();
+  const { showAlert } = useAlert();
   const { autoSelectSeriesId, autoSelectMessageId } = useLocalSearchParams<{
     autoSelectSeriesId?: string;
     autoSelectMessageId?: string;
@@ -148,10 +150,8 @@ export default function TeachingsScreen() {
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
   const themeColors = Colors[activeScheme === 'dark' ? 'dark' : 'light'];
 
-  // Search & Categories state
+  // Search state
   const [searchQuery, setSearchQuery] = useState('');
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | number | null>(null);
 
   // View state (defaults to true for Grid View)
   const [isGridView, setIsGridView] = useState(true);
@@ -226,17 +226,35 @@ export default function TeachingsScreen() {
 
   useEffect(() => {
     const handleAutoSelect = async () => {
-      if (seriesList.length === 0) return;
+      if (!autoSelectSeriesId && !autoSelectMessageId) {
+        lastAutoSelectedRef.current = {};
+        return;
+      }
 
-      const hasNewSeries = autoSelectSeriesId && lastAutoSelectedRef.current.seriesId !== autoSelectSeriesId;
-      const hasNewMessage = autoSelectMessageId && lastAutoSelectedRef.current.messageId !== autoSelectMessageId;
+      const hasNewSeries = !!autoSelectSeriesId && lastAutoSelectedRef.current.seriesId !== autoSelectSeriesId;
+      const hasNewMessage = !!autoSelectMessageId && lastAutoSelectedRef.current.messageId !== autoSelectMessageId;
 
       if (hasNewSeries) {
+        lastAutoSelectedRef.current.seriesId = autoSelectSeriesId;
         const series = seriesList.find(s => String(s.seriesId) === String(autoSelectSeriesId));
         if (series) {
-          lastAutoSelectedRef.current.seriesId = autoSelectSeriesId;
           handleSelectSeries(series);
           router.setParams({ autoSelectSeriesId: undefined, autoSelectMessageId: undefined });
+        } else if (!seriesLoading) {
+          // If series list is done loading and still not found in list, fallback to direct fetch
+          try {
+            setMessagesLoading(true);
+            const result = await apiService.getSeriesById(autoSelectSeriesId);
+            if (result && result.series) {
+              setSelectedSeries(result.series);
+              setSeriesMessages(result.messages || []);
+            }
+          } catch (err) {
+            console.error('Error fetching series directly:', err);
+          } finally {
+            setMessagesLoading(false);
+            router.setParams({ autoSelectSeriesId: undefined, autoSelectMessageId: undefined });
+          }
         }
       } else if (hasNewMessage) {
         lastAutoSelectedRef.current.messageId = autoSelectMessageId;
@@ -277,42 +295,60 @@ export default function TeachingsScreen() {
 
   const fetchInitialData = async (forceRefresh = false) => {
     if (!forceRefresh && teachingsMainCache) {
-      setCategories(teachingsMainCache.categories);
       setSeriesList(teachingsMainCache.seriesList);
       setSeriesLoading(false);
       return;
     }
     setSeriesLoading(true);
     try {
-      const [categoriesData, seriesData, messagesData] = await Promise.all([
-        apiService.getCategories(forceRefresh),
+      const [seriesData, messagesData] = await Promise.all([
         apiService.getAllSeries(forceRefresh),
-        apiService.getRecentMessages(100, forceRefresh), // Get all messages to count tracks
+        apiService.getRecentMessages(100, forceRefresh), // Get recent messages to count tracks and determine newest updates
       ]);
 
-      // Calculate track counts, speaker, and category tags dynamically
-      const seriesWithCounts = seriesData.map((s: Series) => {
-        const seriesMessages = messagesData.filter((m: Message) => String(m.seriesId) === String(s.seriesId));
-        const count = seriesMessages.length;
-        
-        // Find speaker from messages
-        const speaker = seriesMessages.length > 0 ? seriesMessages[0].speaker : 'Christ Pavilion';
-        
-        // Find categories
-        const categoryIds = Array.from(new Set(seriesMessages.flatMap(m => m.categoryIds || [])));
-        const seriesCategories = categoriesData.filter(c => categoryIds.includes(c.categoryId));
+      // Calculate track counts, speaker, and latest upload/published date dynamically
+      const seriesWithMeta: ExtendedSeries[] = seriesData
+        .map((s: Series) => {
+          const seriesMsgs = messagesData.filter((m: Message) => String(m.seriesId) === String(s.seriesId) && m.audioUrl);
+          const count = seriesMsgs.length;
+          
+          // Find speaker from messages
+          const speaker = seriesMsgs.length > 0 ? seriesMsgs[0].speaker : 'Christ Pavilion';
+          
+          // Find latest published date across messages in this series
+          let latestDate = 0;
+          for (const m of seriesMsgs) {
+            if (m.publishedDate) {
+              const time = new Date(m.publishedDate).getTime();
+              if (!isNaN(time) && time > latestDate) {
+                latestDate = time;
+              }
+            }
+          }
 
-        return {
-          ...s,
-          publishedMessagesCount: count || s.publishedMessagesCount || 0,
-          speaker,
-          categories: seriesCategories,
-        };
+          return {
+            ...s,
+            publishedMessagesCount: count || s.publishedMessagesCount || 0,
+            speaker,
+            latestDate,
+          };
+        })
+        .filter((s) => (s.publishedMessagesCount || 0) > 0);
+
+      // Sort series by newly updated (latest sermon date descending)
+      seriesWithMeta.sort((a, b) => {
+        const timeA = a.latestDate || 0;
+        const timeB = b.latestDate || 0;
+        if (timeB !== timeA && timeB > 0 && timeA > 0) {
+          return timeB - timeA;
+        }
+        if (timeB > 0 && timeA === 0) return -1;
+        if (timeA > 0 && timeB === 0) return 1;
+        return Number(b.seriesId) - Number(a.seriesId);
       });
 
-      setCategories(categoriesData);
-      setSeriesList(seriesWithCounts);
-      teachingsMainCache = { categories: categoriesData, seriesList: seriesWithCounts };
+      setSeriesList(seriesWithMeta);
+      teachingsMainCache = { seriesList: seriesWithMeta };
     } catch (error) {
       console.error('Error fetching teachings screen data:', error);
     } finally {
@@ -356,24 +392,25 @@ export default function TeachingsScreen() {
 
   const handleDownloadMessage = async (msg: Message) => {
     if (isDownloaded(msg)) {
-      Alert.alert(
-        'Offline Track',
-        `"${msg.title}" is already downloaded.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
+      showAlert({
+        title: 'Offline Track',
+        message: `"${msg.title}" is already downloaded.`,
+        buttons: [
+          { text: 'Save to Device Store', style: 'default', onPress: () => saveTrackToDevice(msg) },
+          { text: 'Share Track', style: 'default', onPress: () => shareTrack(msg) },
           { text: 'Delete Download', style: 'destructive', onPress: () => deleteDownloadedTrack(msg.messageId) },
-          { text: 'Save to Device Store', onPress: () => saveTrackToDevice(msg) },
-          { text: 'Share Track', onPress: () => shareTrack(msg) }
-        ]
-      );
-    } else {
-      Alert.alert(
-        'Download Sermon',
-        `Would you like to download "${msg.title}" to your device for offline playback?`,
-        [
           { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Download', 
+        ],
+      });
+    } else {
+      showAlert({
+        title: 'Download Sermon',
+        message: `Would you like to download "${msg.title}" to your device for offline playback?`,
+        buttons: [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Download',
+            style: 'primary',
             onPress: async () => {
               try {
                 await downloadTrack(msg);
@@ -381,18 +418,20 @@ export default function TeachingsScreen() {
               } catch (err) {
                 console.error(err);
               }
-            }
-          }
-        ]
-      );
+            },
+          },
+        ],
+      });
     }
   };
 
-  // Filter series list based on search and categories
+  // Filter series list based on search query
   const filteredSeries = seriesList.filter(s => {
-    const matchesSearch = s.seriesName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === null || (s.categories && s.categories.some(c => String(c.categoryId) === String(selectedCategory)));
-    return matchesSearch && matchesCategory;
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    const matchesTitle = s.seriesName.toLowerCase().includes(query);
+    const matchesSpeaker = s.speaker ? s.speaker.toLowerCase().includes(query) : false;
+    return matchesTitle || matchesSpeaker;
   });
 
   const bgColors: [string, string, string] = activeScheme === 'dark'
@@ -518,7 +557,7 @@ export default function TeachingsScreen() {
                       delayLongPress={350}
                     >
                       <Text style={[styles.trackNumberText, { color: themeColors.textSecondary }]}>
-                        {String(index + 1).padStart(2, '0')}
+                        {String(msg.originalTrackNumber ?? (index + 1)).padStart(2, '0')}
                       </Text>
                       <View style={[
                         styles.playIconBox, 
@@ -613,62 +652,11 @@ export default function TeachingsScreen() {
                 )}
               </TouchableOpacity>
             </View>
-
-            {/* Categories bar */}
-            {categories.length > 0 && (
-              <View style={styles.categoriesWrapper}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoriesContainer}
-                >
-                  <TouchableOpacity
-                    style={[
-                      styles.categoryBadge,
-                      selectedCategory === null
-                        ? { backgroundColor: themeColors.primary }
-                        : { backgroundColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(27, 84, 164, 0.08)' },
-                    ]}
-                    onPress={() => setSelectedCategory(null)}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        selectedCategory === null ? { color: '#ffffff', fontWeight: 'bold' } : { color: themeColors.text },
-                      ]}
-                    >
-                      All
-                    </Text>
-                  </TouchableOpacity>
-                  {categories.map((cat) => (
-                    <TouchableOpacity
-                      key={cat.categoryId}
-                      style={[
-                        styles.categoryBadge,
-                        selectedCategory === cat.categoryId
-                          ? { backgroundColor: themeColors.primary }
-                          : { backgroundColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(27, 84, 164, 0.08)' },
-                      ]}
-                      onPress={() => setSelectedCategory(cat.categoryId)}
-                    >
-                      <Text
-                        style={[
-                          styles.categoryText,
-                          selectedCategory === cat.categoryId ? { color: '#ffffff', fontWeight: 'bold' } : { color: themeColors.text },
-                        ]}
-                      >
-                        {cat.categoryName}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
           </BlurHeader>
 
           {/* Series Grid / List */}
           {seriesLoading ? (
-            <View style={{ paddingTop: 140 + insets.top }}>
+            <View style={{ paddingTop: 78 + insets.top }}>
               {isGridView ? (
                 <SeriesGridSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
               ) : (
@@ -678,15 +666,15 @@ export default function TeachingsScreen() {
           ) : filteredSeries.length > 0 ? (
             <FlatList
               key={isGridView ? 'grid' : 'list'}
-              contentInset={Platform.OS === 'ios' ? { top: 140 + insets.top } : undefined}
-              contentOffset={Platform.OS === 'ios' ? { y: -(140 + insets.top), x: 0 } : undefined}
+              contentInset={Platform.OS === 'ios' ? { top: 78 + insets.top } : undefined}
+              contentOffset={Platform.OS === 'ios' ? { y: -(78 + insets.top), x: 0 } : undefined}
               automaticallyAdjustContentInsets={false}
               refreshControl={
                 <RefreshControl 
                   refreshing={refreshing} 
                   onRefresh={onRefresh} 
                   tintColor={themeColors.primary} 
-                  progressViewOffset={Platform.OS === 'android' ? 140 + insets.top : undefined}
+                  progressViewOffset={Platform.OS === 'android' ? 78 + insets.top : undefined}
                 />
               }
               data={filteredSeries}
@@ -694,7 +682,7 @@ export default function TeachingsScreen() {
               numColumns={isGridView ? 2 : 1}
               contentContainerStyle={[
                 isGridView ? styles.gridContainer : styles.listContainer, 
-                { paddingTop: Platform.OS === 'android' ? 140 + insets.top : 0, paddingBottom: 150 + insets.bottom }
+                { paddingTop: Platform.OS === 'android' ? 78 + insets.top : 0, paddingBottom: 150 + insets.bottom }
               ]}
               renderItem={({ item }) => isGridView ? (
                 <TouchableOpacity
@@ -763,17 +751,6 @@ export default function TeachingsScreen() {
                     <Text style={[styles.listTrackCount, { color: themeColors.primary }]}>
                       {item.publishedMessagesCount || 0} tracks
                     </Text>
-                    {item.categories && item.categories.length > 0 && (
-                      <View style={styles.listCategoriesContainer}>
-                        {item.categories.slice(0, 2).map((cat) => (
-                          <View key={cat.categoryId} style={[styles.listCategoryTag, { backgroundColor: activeScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(27,84,164,0.08)' }]}>
-                            <Text style={[styles.listCategoryTagText, { color: themeColors.textSecondary }]}>
-                              {cat.categoryName}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
                   </View>
                 </TouchableOpacity>
               )}
@@ -824,24 +801,6 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-  },
-  categoriesWrapper: {
-    height: 48,
-    marginBottom: 8,
-  },
-  categoriesContainer: {
-    paddingHorizontal: 16,
-  },
-  categoryBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    height: 36,
-    justifyContent: 'center',
-  },
-  categoryText: {
-    fontSize: 14,
   },
   gridContainer: {
     paddingHorizontal: 8,
@@ -1069,20 +1028,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 2,
-  },
-  listCategoriesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  listCategoryTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  listCategoryTagText: {
-    fontSize: 10,
-    fontWeight: '500',
   },
   skeletonLine: {
     borderRadius: 4,

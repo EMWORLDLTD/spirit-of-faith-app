@@ -9,7 +9,7 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
-  Animated,
+  Animated as RNAnimated,
   Platform,
   FlatList,
   PanResponder,
@@ -17,7 +17,18 @@ import {
   BackHandler,
   useColorScheme,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  interpolate,
+  interpolateColor,
+  runOnJS,
+  Easing,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import SwipeableModal from './SwipeableModal';
 import { useAudio } from '../contexts/AudioContext';
 import { Colors } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -56,32 +67,32 @@ const formatTime = (ms: number) => {
 };
 
 // Animated Waveform component to mimic audio pitch and energy
-const PlaybackWaveform = ({ isPlaying }: { isPlaying: boolean }) => {
+const PlaybackWaveform = React.memo(({ isPlaying }: { isPlaying: boolean }) => {
   const barsCount = 21;
   // Initialize scale values for each bar
   const anims = useRef(
     Array(barsCount)
       .fill(0)
-      .map(() => new Animated.Value(0.3))
+      .map(() => new RNAnimated.Value(0.3))
   ).current;
 
   useEffect(() => {
-    let animations: Animated.CompositeAnimation[] = [];
+    let animations: RNAnimated.CompositeAnimation[] = [];
 
     if (isPlaying) {
-      animations = anims.map((anim, idx) => {
+      animations = anims.map((anim) => {
         // Create random speeds and heights for organic waving motion
-        const duration = 300 + Math.random() * 400;
-        const targetValue = 0.4 + Math.random() * 1.6;
+        const duration = 280 + Math.random() * 320;
+        const targetValue = 0.4 + Math.random() * 1.5;
 
-        return Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, {
+        return RNAnimated.loop(
+          RNAnimated.sequence([
+            RNAnimated.timing(anim, {
               toValue: targetValue,
               duration: duration,
               useNativeDriver: true,
             }),
-            Animated.timing(anim, {
+            RNAnimated.timing(anim, {
               toValue: 0.3,
               duration: duration,
               useNativeDriver: true,
@@ -89,29 +100,27 @@ const PlaybackWaveform = ({ isPlaying }: { isPlaying: boolean }) => {
           ])
         );
       });
-      Animated.parallel(animations).start();
+      RNAnimated.parallel(animations).start();
     } else {
       // Settle down to uniform flat line when paused
       anims.forEach((anim) => {
-        Animated.timing(anim, {
+        RNAnimated.timing(anim, {
           toValue: 0.25,
-          duration: 300,
+          duration: 200,
           useNativeDriver: true,
         }).start();
       });
     }
 
     return () => {
-      if (isPlaying) {
-        anims.forEach((anim) => anim.stopAnimation());
-      }
+      anims.forEach((anim) => anim.stopAnimation());
     };
   }, [isPlaying]);
 
   return (
     <View style={styles.waveformContainer}>
       {anims.map((anim, idx) => (
-        <Animated.View
+        <RNAnimated.View
           key={idx}
           style={[
             styles.waveformBar,
@@ -124,9 +133,9 @@ const PlaybackWaveform = ({ isPlaying }: { isPlaying: boolean }) => {
       ))}
     </View>
   );
-};
+});
 
-const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+const AnimatedBlurView = RNAnimated.createAnimatedComponent(BlurView);
 
 export default function AudioPlayer() {
   const colorScheme = useColorScheme();
@@ -179,9 +188,8 @@ export default function AudioPlayer() {
   const [showSkipMenu, setShowSkipMenu] = useState(false);
   const [showOfflineMenu, setShowOfflineMenu] = useState(false);
 
-  const pan = useRef(new Animated.ValueXY()).current;
-  const fullPlayerTranslateY = useRef(new Animated.Value(0)).current;
-  const expandAnim = useRef(new Animated.Value(0)).current;
+  const panXShared = useSharedValue(0);
+  const expandAnimShared = useSharedValue(0);
   const dismissTimeoutRef = useRef<any>(null);
   const [renderFullPlayer, setRenderFullPlayer] = useState(expanded);
 
@@ -189,29 +197,17 @@ export default function AudioPlayer() {
   useEffect(() => {
     if (expanded) {
       setRenderFullPlayer(true);
-      Animated.spring(expandAnim, {
-        toValue: 1,
-        tension: 30,
-        friction: 8,
-        useNativeDriver: false,
-      }).start();
+      expandAnimShared.value = withTiming(1, {
+        duration: 280,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+      });
     } else {
-      Animated.parallel([
-        Animated.spring(expandAnim, {
-          toValue: 0,
-          tension: 30,
-          friction: 8,
-          useNativeDriver: false,
-        }),
-        Animated.spring(fullPlayerTranslateY, {
-          toValue: 0,
-          tension: 30,
-          friction: 8,
-          useNativeDriver: false,
-        }),
-      ]).start(({ finished }) => {
+      expandAnimShared.value = withTiming(0, {
+        duration: 280,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+      }, (finished) => {
         if (finished) {
-          setRenderFullPlayer(false);
+          runOnJS(setRenderFullPlayer)(false);
         }
       });
     }
@@ -240,7 +236,7 @@ export default function AudioPlayer() {
     showQueueModalRef.current = showQueueModal;
   }, [showQueueModal]);
   
-  const queueTranslateY = useRef(new Animated.Value(0)).current;
+  const queueTranslateY = useRef(new RNAnimated.Value(0)).current;
   const queueScrollY = useRef(0);
 
   const queuePanResponder = useRef(
@@ -269,7 +265,7 @@ export default function AudioPlayer() {
       onPanResponderRelease: (_evt, gestureState) => {
         if (gestureState.dy > 80 || gestureState.vy > 0.5) {
           // Swipe threshold met — close queue
-          Animated.timing(queueTranslateY, {
+          RNAnimated.timing(queueTranslateY, {
             toValue: height, 
             duration: 250,
             useNativeDriver: true,
@@ -281,7 +277,7 @@ export default function AudioPlayer() {
           });
         } else {
           // Snap back
-          Animated.spring(queueTranslateY, {
+          RNAnimated.spring(queueTranslateY, {
             toValue: 0,
             useNativeDriver: true,
             tension: 40,
@@ -299,49 +295,52 @@ export default function AudioPlayer() {
         // Ignore if queue modal is open to prevent full player from closing
         if (showQueueModalRef.current) return false;
 
-        // Only capture vertical downward drags (dy > 10) and ignore horizontal swipes
-        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        // Capture vertical downward drags (dy > 4) and ignore horizontal swipes
+        return gestureState.dy > 4 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
       onMoveShouldSetPanResponderCapture: (_evt, gestureState) => {
         // Ignore if queue modal is open to prevent full player from closing
         if (showQueueModalRef.current) return false;
 
-        // Only capture vertical downward drags (dy > 10) and ignore horizontal swipes
-        return gestureState.dy > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        // Capture vertical downward drags (dy > 4) and ignore horizontal swipes
+        return gestureState.dy > 4 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
       onPanResponderMove: (_evt, gestureState) => {
-        // Only allow dragging downward (clamp at 0)
+        // Real-time direct manipulation: morph smoothly as finger moves
         if (gestureState.dy > 0) {
-          fullPlayerTranslateY.setValue(gestureState.dy);
+          const MAX_DRAG = 280;
+          const progress = Math.max(0, Math.min(1, 1 - gestureState.dy / MAX_DRAG));
+          expandAnimShared.value = progress;
+        } else {
+          expandAnimShared.value = 1;
         }
       },
       onPanResponderRelease: (_evt, gestureState) => {
-        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
-          // Swipe threshold met — collapse player
+        const isFlickDown = gestureState.vy > 0.25 || (gestureState.dy > 50 && gestureState.vy >= 0);
+        const isFlickUp = gestureState.vy < -0.25;
+
+        if (isFlickDown && !isFlickUp) {
+          // Smoothly finish morphing into mini player with natural duration and bezier curve
+          expandAnimShared.value = withTiming(0, {
+            duration: 280,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+          }, (finished) => {
+            if (finished) {
+              runOnJS(setRenderFullPlayer)(false);
+            }
+          });
           setExpanded(false);
         } else {
-          // Snap back
-          Animated.spring(fullPlayerTranslateY, {
-            toValue: 0,
-            useNativeDriver: false,
-            tension: 40,
-            friction: 8,
-          }).start();
+          // Spring snap back up to 100% full screen
+          expandAnimShared.value = withSpring(1, {
+            damping: 18,
+            stiffness: 200,
+            mass: 0.8,
+          });
         }
       },
     })
   ).current;
-
-  // Reset full player translateY when it is expanded (opened)
-  useEffect(() => {
-    if (expanded) {
-      if (dismissTimeoutRef.current) {
-        clearTimeout(dismissTimeoutRef.current);
-        dismissTimeoutRef.current = null;
-      }
-      fullPlayerTranslateY.setValue(0);
-    }
-  }, [expanded]);
 
   // Enforce correct visibility state when track/playback changes
   useEffect(() => {
@@ -362,42 +361,74 @@ export default function AudioPlayer() {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Set pan responder only for horizontal drags greater than 10px
-        return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dy) < 8;
+      onMoveShouldSetPanResponder: (_evt, gestureState) => {
+        // Vertical upward drag/flick to expand
+        const isVerticalUp = gestureState.dy < -6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        // Horizontal swipe to collapse
+        const isHorizontal = Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+        return isVerticalUp || isHorizontal;
       },
-      onPanResponderMove: (evt, gestureState) => {
-        pan.setValue({ x: gestureState.dx, y: 0 });
+      onPanResponderGrant: () => {
+        setRenderFullPlayer(true);
       },
-      onPanResponderRelease: (evt, gestureState) => {
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dy < 0) {
+          // Direct manipulation upward drag from mini to full
+          const MAX_DRAG = 280;
+          const progress = Math.min(1, Math.abs(gestureState.dy) / MAX_DRAG);
+          expandAnimShared.value = progress;
+        } else if (Math.abs(gestureState.dx) > 0) {
+          panXShared.value = gestureState.dx;
+        }
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        // Check if user was dragging or flicking vertically upward
+        if (gestureState.dy < -10 || gestureState.vy < -0.25) {
+          const isFlickUp = gestureState.vy < -0.25 || gestureState.dy < -40;
+          if (isFlickUp) {
+            // Expand to full screen smoothly
+            expandAnimShared.value = withTiming(1, {
+              duration: 280,
+              easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            });
+            setExpanded(true);
+          } else {
+            // Snap back down to mini player
+            expandAnimShared.value = withSpring(0, {
+              damping: 18,
+              stiffness: 200,
+              mass: 0.8,
+            }, (finished) => {
+              if (finished) {
+                runOnJS(setRenderFullPlayer)(false);
+              }
+            });
+          }
+          return;
+        }
+
         if (gestureState.dx > 120) {
           // Swiped right: collapse player
-          Animated.timing(pan.x, {
-            toValue: width,
-            duration: 200,
-            useNativeDriver: false,
-          }).start(() => {
-            setMiniPlayerState('collapsed');
-            pan.setValue({ x: 0, y: 0 });
+          panXShared.value = withTiming(width, { duration: 200 }, (finished) => {
+            if (finished) {
+              runOnJS(setMiniPlayerState)('collapsed');
+              panXShared.value = 0;
+            }
           });
         } else if (gestureState.dx < -120) {
           // Swiped left: collapse player
-          Animated.timing(pan.x, {
-            toValue: -width,
-            duration: 200,
-            useNativeDriver: false,
-          }).start(() => {
-            setMiniPlayerState('collapsed');
-            pan.setValue({ x: 0, y: 0 });
+          panXShared.value = withTiming(-width, { duration: 200 }, (finished) => {
+            if (finished) {
+              runOnJS(setMiniPlayerState)('collapsed');
+              panXShared.value = 0;
+            }
           });
         } else {
           // Reset position
-          Animated.spring(pan, {
-            toValue: { x: 0, y: 0 },
-            useNativeDriver: false,
-            tension: 40,
-            friction: 8,
-          }).start();
+          panXShared.value = withTiming(0, {
+            duration: 200,
+            easing: Easing.out(Easing.cubic),
+          });
         }
       },
     })
@@ -490,6 +521,120 @@ export default function AudioPlayer() {
     }
   };
 
+  // Reanimated style for the outer morphing container
+  const containerAnimatedStyle = useAnimatedStyle(() => {
+    const expandVal = expandAnimShared.value;
+    const h = interpolate(expandVal, [0, 1], [74, height]);
+    const w = interpolate(expandVal, [0, 1], [width - 32, width]);
+    const l = interpolate(expandVal, [0, 1], [16, 0]);
+    const b = interpolate(expandVal, [0, 1], [76 + insets.bottom, 0]);
+    const br = interpolate(expandVal, [0, 1], [18, 0]);
+    const bw = interpolate(expandVal, [0, 1], [activeScheme === 'dark' ? 1 : 0.5, 0]);
+
+    return {
+      width: w,
+      height: h,
+      left: l,
+      bottom: b,
+      borderRadius: br,
+      borderWidth: bw,
+      transform: [
+        { translateX: panXShared.value },
+      ],
+    };
+  });
+
+  // Reanimated style for the full player background (fades in)
+  const fullBackgroundAnimatedStyle = useAnimatedStyle(() => {
+    const br = interpolate(expandAnimShared.value, [0, 1], [18, 0]);
+    const opacityVal = interpolate(expandAnimShared.value, [0.05, 0.95], [0, 1], 'clamp');
+    return {
+      opacity: opacityVal,
+      borderRadius: br,
+    };
+  });
+
+  // Reanimated style for the mini player background / content wrapper (fades out)
+  const miniPlayerContainerAnimatedStyle = useAnimatedStyle(() => {
+    const opacityVal = interpolate(expandAnimShared.value, [0, 0.4], [1, 0], 'clamp');
+    const br = interpolate(expandAnimShared.value, [0, 1], [18, 0]);
+    return {
+      opacity: opacityVal,
+      borderRadius: br,
+    };
+  });
+
+  // Reanimated style for the mini player content row
+  const miniPlayerContentAnimatedStyle = useAnimatedStyle(() => {
+    const opacityVal = interpolate(expandAnimShared.value, [0, 0.35], [1, 0], 'clamp');
+    return {
+      opacity: opacityVal,
+    };
+  });
+
+  // Reanimated style for the full player content container (fades in)
+  const fullPlayerContentAnimatedStyle = useAnimatedStyle(() => {
+    const opacityVal = interpolate(expandAnimShared.value, [0.25, 0.85], [0, 1], 'clamp');
+    const translateY = interpolate(expandAnimShared.value, [0.25, 1], [30, 0], 'clamp');
+    return {
+      opacity: opacityVal,
+      transform: [{ translateY }],
+    };
+  });
+
+  // Reanimated style for the shared artwork container
+  const sharedArtworkAnimatedStyle = useAnimatedStyle(() => {
+    const expandVal = expandAnimShared.value;
+    const size = interpolate(expandVal, [0, 1], [40, width * 0.68]);
+    const left = interpolate(expandVal, [0, 1], [12, (width - width * 0.68) / 2]);
+    const top = interpolate(expandVal, [0, 1], [17, insets.top + 79]);
+    const br = interpolate(expandVal, [0, 1], [8, (width * 0.68) / 2]);
+    const bw = interpolate(expandVal, [0, 1], [0, 3]);
+    const bc = interpolateColor(
+      expandVal,
+      [0, 1],
+      ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.4)']
+    );
+    const shadowOpacity = interpolate(expandVal, [0, 1], [0, 0.3]);
+    const elevationVal = interpolate(expandVal, [0, 1], [0, 8]);
+
+    return {
+      width: size,
+      height: size,
+      left: left,
+      top: top,
+      borderRadius: br,
+      borderWidth: bw,
+      borderColor: bc,
+      shadowOpacity: shadowOpacity,
+      elevation: elevationVal,
+    };
+  });
+
+  // Reanimated style for the artwork image
+  const artworkImageAnimatedStyle = useAnimatedStyle(() => {
+    const br = interpolate(expandAnimShared.value, [0, 1], [8, (width * 0.68) / 2]);
+    return {
+      borderRadius: br,
+    };
+  });
+
+  // Reanimated style for the mini-artwork-placeholder opacity
+  const placeholderMiniAnimatedStyle = useAnimatedStyle(() => {
+    const opacityVal = interpolate(expandAnimShared.value, [0, 0.2], [1, 0], 'clamp');
+    return {
+      opacity: opacityVal,
+    };
+  });
+
+  // Reanimated style for the full-artwork-placeholder opacity
+  const placeholderFullAnimatedStyle = useAnimatedStyle(() => {
+    const opacityVal = interpolate(expandAnimShared.value, [0.8, 1], [0, 1], 'clamp');
+    return {
+      opacity: opacityVal,
+    };
+  });
+
   try {
     const isAudioActive = currentTrack !== null || isPlaying;
     let resolvedState: 'full' | 'collapsed' | 'hidden' = miniPlayerState;
@@ -530,82 +675,6 @@ export default function AudioPlayer() {
 
     const isFav = isFavorite(currentTrack);
 
-    // Interpolations for morphing player container
-    const containerHeight = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [74, height],
-    });
-    const containerWidth = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [width - 32, width],
-    });
-    const containerLeft = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [16, 0],
-    });
-    const containerBottom = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [76 + insets.bottom, 0],
-    });
-    const containerBorderRadius = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [18, 0],
-    });
-
-    // Opacities for layout cross-fade
-    const miniPlayerOpacity = expandAnim.interpolate({
-      inputRange: [0, 0.15],
-      outputRange: [1, 0],
-      extrapolate: 'clamp',
-    });
-    const fullPlayerOpacity = expandAnim.interpolate({
-      inputRange: [0.85, 1],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-
-    // Shared Artwork Interpolations
-    const coverArtSize = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [40, width * 0.68],
-    });
-    const coverArtLeft = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [12, (width - width * 0.68) / 2],
-    });
-    const coverArtTop = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [17, insets.top + 79],
-    });
-    const coverArtBorderRadius = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [8, (width * 0.68) / 2],
-    });
-    const coverArtBorderWidth = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, 3],
-    });
-    const coverArtBorderColor = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.4)'],
-    });
-    const coverArtShadowOpacity = expandAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, 0.3],
-    });
-
-    // Placeholder Icon Opacities
-    const placeholderMiniOpacity = expandAnim.interpolate({
-      inputRange: [0, 0.2],
-      outputRange: [1, 0],
-      extrapolate: 'clamp',
-    });
-    const placeholderFullOpacity = expandAnim.interpolate({
-      inputRange: [0.8, 1],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-
     return (
       <>
         {/* FLOATING CIRCULAR COLLAPSED MINI PLAYER */}
@@ -645,26 +714,14 @@ export default function AudioPlayer() {
           <Animated.View
             style={[
               styles.morphingPlayerContainer,
+              containerAnimatedStyle,
               {
-                width: containerWidth,
-                height: containerHeight,
-                left: containerLeft,
-                bottom: containerBottom,
-                borderRadius: containerBorderRadius,
-                transform: [
-                  { translateX: pan.x },
-                  { translateY: fullPlayerTranslateY },
-                ],
                 borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(27, 84, 164, 0.08)',
-                borderWidth: expandAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [activeScheme === 'dark' ? 1 : 0.5, 0],
-                }),
               },
             ]}
           >
             {/* FULL PLAYER BACKGROUND (fades in) */}
-            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: expandAnim, overflow: 'hidden', borderRadius: containerBorderRadius }]}>
+            <Animated.View style={[StyleSheet.absoluteFillObject, { overflow: 'hidden' }, fullBackgroundAnimatedStyle]}>
               {currentTrack.coverUrl ? (
                 <>
                   <Image
@@ -685,7 +742,7 @@ export default function AudioPlayer() {
             </Animated.View>
 
             {/* MINI PLAYER BACKGROUND (fades out) */}
-            <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: miniPlayerOpacity, overflow: 'hidden', borderRadius: containerBorderRadius }]}>
+            <Animated.View style={[StyleSheet.absoluteFillObject, { overflow: 'hidden' }, miniPlayerContainerAnimatedStyle]}>
               <BlurView
                 intensity={Platform.OS === 'android' ? (activeScheme === 'dark' ? 65 : 85) : (activeScheme === 'dark' ? 70 : 90)}
                 tint={activeScheme === 'dark' ? 'dark' : 'light'}
@@ -718,9 +775,7 @@ export default function AudioPlayer() {
             <Animated.View
               style={[
                 StyleSheet.absoluteFillObject,
-                {
-                  opacity: miniPlayerOpacity,
-                }
+                miniPlayerContentAnimatedStyle,
               ]}
               pointerEvents={expanded ? 'none' : 'auto'}
             >
@@ -785,9 +840,7 @@ export default function AudioPlayer() {
               <Animated.View
                 style={[
                   StyleSheet.absoluteFillObject,
-                  {
-                    opacity: fullPlayerOpacity,
-                  }
+                  fullPlayerContentAnimatedStyle,
                 ]}
                 pointerEvents={expanded ? 'auto' : 'none'}
               >
@@ -807,7 +860,7 @@ export default function AudioPlayer() {
                       <TouchableOpacity 
                         onPress={() => {
                           if (isDownloaded(currentTrack)) {
-                            setShowOfflineMenu(true);
+                            setShowOfflineMenu(!showOfflineMenu);
                           } else {
                             downloadTrack(currentTrack);
                           }
@@ -847,10 +900,17 @@ export default function AudioPlayer() {
                     <Text style={styles.trackSpeaker}>
                       {currentTrack.originalTrackNumber ? `Track ${currentTrack.originalTrackNumber} • ` : ''}{currentTrack.speaker}
                     </Text>
+                    {currentTrack.seriesName === 'Daily Devotional' && currentTrack.publishedDate && (
+                      <View style={styles.devotionalDateBadge}>
+                        <Text style={styles.devotionalDateText}>
+                          {currentTrack.publishedDate}
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Audio Waveform visualization */}
-                  <PlaybackWaveform isPlaying={isPlaying} />
+                  <PlaybackWaveform isPlaying={isPlaying && expanded} />
 
                   {/* Seekbar and Timestamps */}
                   <View style={styles.seekbarContainer}>
@@ -969,17 +1029,7 @@ export default function AudioPlayer() {
             <Animated.View
               style={[
                 styles.sharedArtworkContainer,
-                {
-                  width: coverArtSize,
-                  height: coverArtSize,
-                  left: coverArtLeft,
-                  top: coverArtTop,
-                  borderRadius: coverArtBorderRadius,
-                  borderWidth: coverArtBorderWidth,
-                  borderColor: coverArtBorderColor,
-                  shadowOpacity: coverArtShadowOpacity,
-                  elevation: expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }),
-                }
+                sharedArtworkAnimatedStyle,
               ]}
               pointerEvents="none"
             >
@@ -988,29 +1038,27 @@ export default function AudioPlayer() {
                   source={{ uri: currentTrack.coverUrl }} 
                   style={[
                     styles.sharedArtworkImage,
-                    {
-                      borderRadius: coverArtBorderRadius,
-                    }
+                    artworkImageAnimatedStyle,
                   ]} 
                 />
               ) : (
                 <Animated.View 
                   style={[
                     styles.sharedArtworkPlaceholder, 
+                    artworkImageAnimatedStyle,
                     { 
-                      borderRadius: coverArtBorderRadius, 
                       backgroundColor: themeColors.primary,
                       width: '100%',
                       height: '100%',
                     }
                   ]}
                 >
-                  <Animated.View style={{ position: 'absolute', opacity: placeholderMiniOpacity }}>
+                  <Animated.View style={[{ position: 'absolute' }, placeholderMiniAnimatedStyle]}>
                     <Music size={14} color="#ffffff" />
                   </Animated.View>
-                  <Animated.View style={{ position: 'absolute', opacity: placeholderFullOpacity, alignItems: 'center', justifyContent: 'center' }}>
+                  <Animated.View style={[{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }, placeholderFullAnimatedStyle]}>
                     <Music size={90} color="#ffffff" />
-                    <Animated.Text style={[styles.artworkText, { marginTop: 12, opacity: placeholderFullOpacity }]}>Christ Pavilion</Animated.Text>
+                    <Animated.Text style={[styles.artworkText, { marginTop: 12 }, placeholderFullAnimatedStyle]}>Christ Pavilion</Animated.Text>
                   </Animated.View>
                 </Animated.View>
               )}
@@ -1024,7 +1072,7 @@ export default function AudioPlayer() {
                   activeOpacity={1} 
                   onPress={() => setShowQueueModal(false)} 
                 />
-                <Animated.View 
+                <RNAnimated.View 
                   style={[styles.queueModalContent, { backgroundColor: activeScheme === 'dark' ? '#0f172a' : '#f8fafc', transform: [{ translateY: queueTranslateY }] }]}
                   {...queuePanResponder.panHandlers}
                 >
@@ -1118,155 +1166,231 @@ export default function AudioPlayer() {
                       </View>
                     }
                   />
-                </Animated.View>
+                </RNAnimated.View>
+              </View>
+            )}
+
+            {/* Top-Anchored Floating Popover Menu (WhatsApp-Style) - Rendered on top of shared artwork */}
+            {showOfflineMenu && isDownloaded(currentTrack) && expanded && (
+              <View style={[StyleSheet.absoluteFillObject, { zIndex: 99999, elevation: 99 }]}>
+                <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowOfflineMenu(false)} />
+                <View style={[
+                  styles.popoverMenuContainer,
+                  {
+                    backgroundColor: activeScheme === 'dark' ? '#1e293b' : '#ffffff',
+                    borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(27, 84, 164, 0.12)',
+                    top: (insets.top || 0) + 54,
+                    right: 16,
+                  }
+                ]}>
+                  <Text style={[styles.popoverMenuTitle, { color: activeScheme === 'dark' ? '#94a3b8' : '#64748b' }]}>
+                    Offline Options
+                  </Text>
+
+                  {/* Save to Device Files */}
+                  <TouchableOpacity
+                    style={styles.popoverMenuItem}
+                    onPress={() => {
+                      saveTrackToDevice(currentTrack);
+                      setShowOfflineMenu(false);
+                    }}
+                  >
+                    <Library size={16} color={themeColors.primary} style={{ marginRight: 10 }} />
+                    <Text style={[styles.popoverMenuText, { color: themeColors.text }]}>Save to Device Files</Text>
+                  </TouchableOpacity>
+
+                  {/* Share Teaching */}
+                  <TouchableOpacity
+                    style={styles.popoverMenuItem}
+                    onPress={() => {
+                      shareTrack(currentTrack);
+                      setShowOfflineMenu(false);
+                    }}
+                  >
+                    <Share2 size={16} color={themeColors.primary} style={{ marginRight: 10 }} />
+                    <Text style={[styles.popoverMenuText, { color: themeColors.text }]}>Share Teaching</Text>
+                  </TouchableOpacity>
+
+                  {/* Delete Download */}
+                  <TouchableOpacity
+                    style={[
+                      styles.popoverMenuItem,
+                      {
+                        borderTopWidth: 1,
+                        borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                        marginTop: 4,
+                        paddingTop: 8,
+                      }
+                    ]}
+                    onPress={() => {
+                      deleteDownloadedTrack(currentTrack.messageId);
+                      setShowOfflineMenu(false);
+                    }}
+                  >
+                    <Trash2 size={16} color="#ef4444" style={{ marginRight: 10 }} />
+                    <Text style={[styles.popoverMenuText, { color: '#ef4444' }]}>Delete Download</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Bottom-Anchored Floating Popover Menu for Skip Interval */}
+            {showSkipMenu && expanded && (
+              <View style={[StyleSheet.absoluteFillObject, { zIndex: 99999, elevation: 99 }]}>
+                <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowSkipMenu(false)} />
+                <View style={[
+                  styles.skipMenuContainer,
+                  {
+                    backgroundColor: activeScheme === 'dark' ? '#1e293b' : '#ffffff',
+                    borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(27, 84, 164, 0.12)',
+                    bottom: (insets.bottom || 16) + 120,
+                  }
+                ]}>
+                  <Text style={[styles.skipMenuTitle, { color: activeScheme === 'dark' ? '#94a3b8' : '#64748b' }]}>
+                    Skip Interval
+                  </Text>
+
+                  {[5, 10, 15, 30].map((sec) => {
+                    const isSelected = skipInterval === sec;
+                    return (
+                      <TouchableOpacity
+                        key={sec}
+                        style={[
+                          styles.skipMenuItem,
+                          isSelected && {
+                            backgroundColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(27, 84, 164, 0.08)',
+                          }
+                        ]}
+                        onPress={() => {
+                          updateSkipInterval(sec);
+                          setShowSkipMenu(false);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.skipMenuText,
+                            {
+                              color: isSelected ? themeColors.primary : themeColors.text,
+                              fontWeight: isSelected ? 'bold' : '500',
+                              flex: 1,
+                            }
+                          ]}
+                        >
+                          {sec} seconds
+                        </Text>
+                        {isSelected && (
+                          <Check size={16} color={themeColors.primary} strokeWidth={2.5} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             )}
           </Animated.View>
         )}
 
+
         {/* TRACK OPTIONS BOTTOM ACTION SHEET */}
-        <Modal
+        <SwipeableModal
           visible={activeActionTrack !== null}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={closeActionSheet}
+          onClose={closeActionSheet}
+          title={activeActionTrack?.title}
+          subtitle={activeActionTrack?.speaker || 'Christ Pavilion'}
         >
           {activeActionTrack && (
-            <View style={styles.actionSheetOverlay}>
-              <Pressable style={StyleSheet.absoluteFillObject} onPress={closeActionSheet} />
-              <View style={[
-                styles.actionSheetContainer,
-                { backgroundColor: activeScheme === 'dark' ? '#0f172a' : '#ffffff' }
-              ]}>
-                <View style={styles.actionSheetHeader}>
-                  <View style={styles.actionSheetHeaderIndicator} />
-                  {activeActionTrack.coverUrl ? (
-                    <Image source={{ uri: activeActionTrack.coverUrl }} style={{ width: 64, height: 64, borderRadius: 12, marginBottom: 12 }} />
-                  ) : (
-                    <View style={{ width: 64, height: 64, borderRadius: 12, backgroundColor: themeColors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
-                      <Music size={28} color="#ffffff" />
-                    </View>
-                  )}
-                  <Text style={[styles.actionSheetTitle, { color: themeColors.text }]} numberOfLines={1}>
-                    {activeActionTrack.title}
-                  </Text>
-                  <Text style={[styles.actionSheetSubtitle, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                    {activeActionTrack.speaker || 'Christ Pavilion'}
-                  </Text>
-                </View>
+            <View style={styles.actionSheetOptions}>
+              {/* Play Next */}
+              <TouchableOpacity
+                style={[styles.actionSheetOption, actionSheetOptionStyle]}
+                onPress={() => {
+                  playNextTrack(activeActionTrack);
+                  closeActionSheet();
+                }}
+              >
+                <Play size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
+                <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Play Next</Text>
+              </TouchableOpacity>
 
-                <View style={styles.actionSheetOptions}>
-                  {/* Play Next */}
-                  <TouchableOpacity
-                    style={[styles.actionSheetOption, actionSheetOptionStyle]}
-                    onPress={() => {
-                      playNextTrack(activeActionTrack);
-                      closeActionSheet();
-                    }}
-                  >
-                    <Play size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
-                    <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Play Next</Text>
-                  </TouchableOpacity>
+              {/* Add to Queue */}
+              <TouchableOpacity
+                style={[styles.actionSheetOption, actionSheetOptionStyle]}
+                onPress={() => {
+                  addToQueue(activeActionTrack);
+                  closeActionSheet();
+                }}
+              >
+                <Plus size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
+                <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Add to Queue</Text>
+              </TouchableOpacity>
 
-                  {/* Add to Queue */}
-                  <TouchableOpacity
-                    style={[styles.actionSheetOption, actionSheetOptionStyle]}
-                    onPress={() => {
-                      addToQueue(activeActionTrack);
-                      closeActionSheet();
-                    }}
-                  >
-                    <Plus size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
-                    <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Add to Queue</Text>
-                  </TouchableOpacity>
+              {/* Favorite */}
+              <TouchableOpacity
+                style={[styles.actionSheetOption, actionSheetOptionStyle]}
+                onPress={() => {
+                  toggleFavorite(activeActionTrack);
+                  closeActionSheet();
+                }}
+              >
+                <Heart 
+                  size={18} 
+                  color={isFavorite(activeActionTrack) ? '#ef4444' : themeColors.primary} 
+                  fill={isFavorite(activeActionTrack) ? '#ef4444' : 'transparent'} 
+                  style={styles.actionSheetOptionIcon} 
+                />
+                <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>
+                  {isFavorite(activeActionTrack) ? 'Remove from Favorites' : 'Add to Favorites'}
+                </Text>
+              </TouchableOpacity>
 
-                  {/* Favorite */}
-                  <TouchableOpacity
-                    style={[styles.actionSheetOption, actionSheetOptionStyle]}
-                    onPress={() => {
-                      toggleFavorite(activeActionTrack);
-                      closeActionSheet();
-                    }}
-                  >
-                    <Heart 
-                      size={18} 
-                      color={isFavorite(activeActionTrack) ? '#ef4444' : themeColors.primary} 
-                      fill={isFavorite(activeActionTrack) ? '#ef4444' : 'transparent'} 
-                      style={styles.actionSheetOptionIcon} 
-                    />
-                    <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>
-                      {isFavorite(activeActionTrack) ? 'Remove from Favorites' : 'Add to Favorites'}
-                    </Text>
-                  </TouchableOpacity>
+              {/* Download / Delete */}
+              <TouchableOpacity
+                style={[styles.actionSheetOption, actionSheetOptionStyle]}
+                onPress={() => {
+                  if (isDownloaded(activeActionTrack)) {
+                    deleteDownloadedTrack(activeActionTrack.messageId);
+                  } else {
+                    downloadTrack(activeActionTrack);
+                  }
+                  closeActionSheet();
+                }}
+              >
+                {isDownloaded(activeActionTrack) ? (
+                  <Trash2 size={18} color="#ef4444" style={styles.actionSheetOptionIcon} />
+                ) : (
+                  <Download size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
+                )}
+                <Text style={[styles.actionSheetOptionText, { color: isDownloaded(activeActionTrack) ? '#ef4444' : themeColors.text }]}>
+                  {isDownloaded(activeActionTrack) ? 'Delete Download' : 'Download Offline'}
+                </Text>
+              </TouchableOpacity>
 
-                  {/* Download / Delete */}
-                  <TouchableOpacity
-                    style={[styles.actionSheetOption, actionSheetOptionStyle]}
-                    onPress={() => {
-                      if (isDownloaded(activeActionTrack)) {
-                        deleteDownloadedTrack(activeActionTrack.messageId);
-                      } else {
-                        downloadTrack(activeActionTrack);
-                      }
-                      closeActionSheet();
-                    }}
-                  >
-                    {isDownloaded(activeActionTrack) ? (
-                      <Trash2 size={18} color="#ef4444" style={styles.actionSheetOptionIcon} />
-                    ) : (
-                      <Download size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
-                    )}
-                    <Text style={[styles.actionSheetOptionText, { color: isDownloaded(activeActionTrack) ? '#ef4444' : themeColors.text }]}>
-                      {isDownloaded(activeActionTrack) ? 'Delete Download' : 'Download Offline'}
-                    </Text>
-                  </TouchableOpacity>
+              {/* Save to Device Store */}
+              <TouchableOpacity
+                style={[styles.actionSheetOption, actionSheetOptionStyle]}
+                onPress={() => {
+                  saveTrackToDevice(activeActionTrack);
+                  closeActionSheet();
+                }}
+              >
+                <Library size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
+                <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Save to Device Files</Text>
+              </TouchableOpacity>
 
-                  {/* Save to Device Store */}
-                  <TouchableOpacity
-                    style={[styles.actionSheetOption, actionSheetOptionStyle]}
-                    onPress={() => {
-                      saveTrackToDevice(activeActionTrack);
-                      closeActionSheet();
-                    }}
-                  >
-                    <Library size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
-                    <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Save to Device Files</Text>
-                  </TouchableOpacity>
-
-                  {/* Share */}
-                  <TouchableOpacity
-                    style={[styles.actionSheetOption, actionSheetOptionStyle]}
-                    onPress={() => {
-                      shareTrack(activeActionTrack);
-                      closeActionSheet();
-                    }}
-                  >
-                    <Share2 size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
-                    <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Share Teaching</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Close Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.actionSheetOption,
-                    styles.actionSheetCancelOption,
-                    {
-                      backgroundColor: activeScheme === 'dark' ? '#1e293b99' : '#f1f5f9',
-                      borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#cbd5e1',
-                      borderWidth: 1,
-                    }
-                  ]}
-                  onPress={closeActionSheet}
-                >
-                  <Text style={[styles.actionSheetCancelText, { color: themeColors.text, textAlign: 'center', width: '100%' }]}>
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              {/* Share */}
+              <TouchableOpacity
+                style={[styles.actionSheetOption, actionSheetOptionStyle]}
+                onPress={() => {
+                  shareTrack(activeActionTrack);
+                  closeActionSheet();
+                }}
+              >
+                <Share2 size={18} color={themeColors.primary} style={styles.actionSheetOptionIcon} />
+                <Text style={[styles.actionSheetOptionText, { color: themeColors.text }]}>Share Teaching</Text>
+              </TouchableOpacity>
             </View>
           )}
-        </Modal>
+        </SwipeableModal>
       </>
     );
   } catch (error) {
@@ -1448,15 +1572,16 @@ const styles = StyleSheet.create({
   },
   swipeIndicatorContainer: {
     paddingTop: 8,
-    paddingBottom: 4,
+    paddingBottom: 6,
     alignItems: 'center',
+    width: '100%',
     zIndex: 10,
   },
   swipeIndicatorPill: {
-    width: 36,
+    width: 44,
     height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
   },
   fullHeader: {
     flexDirection: 'row',
@@ -1526,6 +1651,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     color: 'rgba(255, 255, 255, 0.7)',
+  },
+  devotionalDateBadge: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  devotionalDateText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   waveformContainer: {
     flexDirection: 'row',
@@ -1675,69 +1815,71 @@ const styles = StyleSheet.create({
   },
   skipMenuContainer: {
     position: 'absolute',
-    bottom: 150,
     alignSelf: 'center',
     width: 220,
     borderRadius: 16,
-    padding: 12,
+    padding: 8,
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
-    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 12,
+    zIndex: 10000,
   },
   skipMenuTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginBottom: 8,
-    paddingHorizontal: 12,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+    paddingTop: 4,
   },
   skipMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     marginVertical: 1,
   },
   skipMenuText: {
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '500',
   },
-  offlineMenuContainer: {
+  popoverMenuContainer: {
     position: 'absolute',
-    right: 20,
+    right: 16,
     width: 210,
     borderRadius: 14,
     padding: 8,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 10,
     zIndex: 1000,
   },
-  offlineMenuTitle: {
+  popoverMenuTitle: {
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginBottom: 6,
+    marginBottom: 4,
     paddingHorizontal: 8,
     paddingTop: 4,
   },
-  offlineMenuItem: {
+  popoverMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 8,
-    marginVertical: 1,
   },
-  offlineMenuText: {
+  popoverMenuText: {
     fontSize: 13,
     fontWeight: '500',
   },

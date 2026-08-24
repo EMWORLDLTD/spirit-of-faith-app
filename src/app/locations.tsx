@@ -40,7 +40,7 @@ const BRANCHES: LocationItem[] = [
     state: 'Lagos',
     phone: '08032325780, 08054975131',
     mapQuery: '99/101, Ekoro/Meiran Road, Agbelekale, Abule Egba, Lagos',
-    serviceTime: 'Sunday Service: 8:00 AM\nMidweek Service (Wednesday): 5:00 PM',
+    serviceTime: 'Sunday Service: 9:00 AM\nMidweek Service (Wednesday): 6:00 PM',
   },
   {
     id: '2',

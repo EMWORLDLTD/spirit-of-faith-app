@@ -19,14 +19,14 @@ import { useAudio } from '../contexts/AudioContext';
 import BlurHeader from '../components/BlurHeader';
 import { 
   ChevronLeft, 
-  Info, 
   MapPin, 
   Phone, 
   Mail, 
   Globe, 
   Clock, 
   Award,
-  BookOpen
+  BookOpen,
+  Quote
 } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
@@ -50,13 +50,13 @@ export default function AboutScreen() {
   };
 
   const handleEmail = () => {
-    Linking.openURL('mailto:info@spiritoffaith.org').catch(() => {
+    Linking.openURL('mailto:info@spiritoffaithmedia.org').catch(() => {
       alert('Unable to open mail client.');
     });
   };
 
   const handleWeb = () => {
-    Linking.openURL('https://spiritoffaith.org').catch(() => {
+    Linking.openURL('https://www.spiritoffaithmedia.org/').catch(() => {
       alert('Unable to open web browser.');
     });
   };
@@ -95,7 +95,7 @@ export default function AboutScreen() {
             <Text style={[styles.appSubtitle, { color: themeColors.primary }]}>Christ Pavilion Media</Text>
           </View>
 
-          {/* Who We Are Card */}
+          {/* 1. Welcome to Our Church Card */}
           <View style={[
             styles.card, 
             { 
@@ -104,15 +104,24 @@ export default function AboutScreen() {
             }
           ]}>
             <View style={styles.cardHeader}>
-              <Info size={20} color={themeColors.primary} />
-              <Text style={[styles.cardTitle, { color: themeColors.text }]}>Who We Are</Text>
+              <Quote size={20} color={themeColors.primary} />
+              <Text style={[styles.cardTitle, { color: themeColors.text }]}>Welcome to Our Church</Text>
             </View>
-            <Text style={[styles.cardText, { color: themeColors.textSecondary }]}>
-              Spirit of Faith Church (Christ Pavilion) is a vibrant ministry dedicated to raising a people of faith, established in the love of God, walking in apostolic power, and manifesting the realities of the Kingdom of God in their daily lives. We believe in the absolute authority of the Word of God and the transforming power of the Holy Spirit.
+            <Text style={[styles.sectionHeading, { color: themeColors.text, fontSize: 14, marginBottom: 2 }]}>
+              Message from Our Senior Pastor
+            </Text>
+            <Text style={[styles.pastorName, { color: themeColors.primary }]}>
+              Pastor Olasanmi Bolajoko <Text style={{ fontSize: 13, fontWeight: 'normal', color: themeColors.textSecondary }}>(Senior Pastor)</Text>
+            </Text>
+            <Text style={[styles.cardText, { color: themeColors.textSecondary, marginTop: 8 }]}>
+              On behalf of Christ Pavilion, I warmly welcome you to our official app. We believe that church is far more than just a Sunday service—it is a living, breathing community of believers walking together in faith, supporting one another, and reaching our world with the transforming love of Christ.
+            </Text>
+            <Text style={[styles.cardText, { color: themeColors.textSecondary, marginTop: 10 }]}>
+              This app serves as a centralized hub for your spiritual growth, giving you instant access to daily devotionals, audio teachings, upcoming events, and branch locations. Whether you connect through the app or visit any of our physical locations, you are loved, valued, and warmly welcomed.
             </Text>
           </View>
 
-          {/* Vision & Mission Card */}
+          {/* 2. Mission & Vision Card */}
           <View style={[
             styles.card, 
             { 
@@ -122,40 +131,25 @@ export default function AboutScreen() {
           ]}>
             <View style={styles.cardHeader}>
               <BookOpen size={20} color={themeColors.primary} />
-              <Text style={[styles.cardTitle, { color: themeColors.text }]}>Vision & Mission</Text>
+              <Text style={[styles.cardTitle, { color: themeColors.text }]}>Mission & Vision</Text>
             </View>
             <View style={styles.bulletItem}>
               <Text style={[styles.bulletPoint, { color: themeColors.primary }]}>•</Text>
               <Text style={[styles.bulletText, { color: themeColors.textSecondary }]}>
-                <Text style={{ fontWeight: 'bold', color: themeColors.text }}>Our Vision: </Text>
-                To build a global community of believers established in faith, walking in love, and operating in the power of the Holy Spirit to dominate every sphere of human endeavor.
+                <Text style={{ fontWeight: 'bold', color: themeColors.text }}>Our Mission: </Text>
+                To add value to lives through the preaching and teaching of God's Word, and through the operations of the gifts of the Holy Spirit, creating an atmosphere where believers are equipped, empowered, and released to fulfill their divine purpose.
               </Text>
             </View>
-            <View style={[styles.bulletItem, { marginTop: 10 }]}>
+            <View style={[styles.bulletItem, { marginTop: 12 }]}>
               <Text style={[styles.bulletPoint, { color: themeColors.primary }]}>•</Text>
               <Text style={[styles.bulletText, { color: themeColors.textSecondary }]}>
-                <Text style={{ fontWeight: 'bold', color: themeColors.text }}>Our Mission: </Text>
-                To preach the gospel of grace with clarity, to teach the uncompromised Word of Faith, and to empower individuals to discover and fulfill their divine purpose.
+                <Text style={{ fontWeight: 'bold', color: themeColors.text }}>Our Vision: </Text>
+                To be a vibrant, Spirit-filled community that transforms lives, impacts communities, and spreads the Gospel of Jesus Christ across Nigeria and to the nations, demonstrating the power and love of God in practical ways.
               </Text>
             </View>
           </View>
 
-          {/* Pastor Profile Card */}
-          <View style={[
-            styles.card, 
-            { 
-              backgroundColor: activeScheme === 'dark' ? 'rgba(15, 23, 42, 0.55)' : '#ffffff', 
-              borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-            }
-          ]}>
-            <Text style={[styles.sectionHeading, { color: themeColors.text }]}>Our Senior Pastor</Text>
-            <Text style={[styles.pastorName, { color: themeColors.primary }]}>Pastor Olasanmi Bolajoko</Text>
-            <Text style={[styles.cardText, { color: themeColors.textSecondary, marginTop: 8 }]}>
-              Pastor Olasanmi Bolajoko is the Senior Pastor of Spirit of Faith Church. Guided by a strong apostolic mandate, he has dedicated his life to teaching the principles of faith, righteousness, and spiritual growth. His messages are practical, inspirational, and deeply rooted in scripture, leading to testimonies of transformation and healing.
-            </Text>
-          </View>
-
-          {/* Service Times Card */}
+          {/* 3. Service Times Card */}
           <View style={[
             styles.card, 
             { 
@@ -170,11 +164,11 @@ export default function AboutScreen() {
             
             <View style={styles.serviceRow}>
               <Text style={[styles.serviceDay, { color: themeColors.text }]}>Sunday Service</Text>
-              <Text style={[styles.serviceTime, { color: themeColors.textSecondary }]}>8:00 AM</Text>
+              <Text style={[styles.serviceTime, { color: themeColors.textSecondary }]}>9:00 AM</Text>
             </View>
             <View style={styles.serviceRow}>
               <Text style={[styles.serviceDay, { color: themeColors.text }]}>Midweek Service (Wednesday)</Text>
-              <Text style={[styles.serviceTime, { color: themeColors.textSecondary }]}>5:00 PM</Text>
+              <Text style={[styles.serviceTime, { color: themeColors.textSecondary }]}>6:00 PM</Text>
             </View>
           </View>
 
@@ -218,7 +212,7 @@ export default function AboutScreen() {
             <TouchableOpacity onPress={handleEmail} style={styles.contactLinkItem}>
               <Mail size={18} color={themeColors.primary} style={styles.contactIcon} />
               <Text style={[styles.contactLinkText, { color: themeColors.primary }]}>
-                info@spiritoffaith.org
+                info@spiritoffaithmedia.org
               </Text>
             </TouchableOpacity>
 
@@ -226,7 +220,7 @@ export default function AboutScreen() {
             <TouchableOpacity onPress={handleWeb} style={styles.contactLinkItem}>
               <Globe size={18} color={themeColors.primary} style={styles.contactIcon} />
               <Text style={[styles.contactLinkText, { color: themeColors.primary }]}>
-                www.spiritoffaith.org
+                www.spiritoffaithmedia.org
               </Text>
             </TouchableOpacity>
           </View>
