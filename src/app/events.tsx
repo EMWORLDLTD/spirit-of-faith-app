@@ -8,10 +8,10 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Animated,
   RefreshControl,
   Platform,
 } from 'react-native';
+import { EaseView } from 'react-native-ease';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiService, ChurchEvent, EventSession } from '../services/api';
@@ -25,19 +25,21 @@ import BlurHeader from '../components/BlurHeader';
 
 const { width } = Dimensions.get('window');
 
-const EventListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const EventListSkeleton = ({ themeColors }: { themeColors: any }) => (
   <View style={{ gap: 16, paddingHorizontal: 16 }}>
     {[1, 2, 3].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.eventItemCard,
           {
             borderColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
             marginBottom: 12,
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={[styles.eventBannerImage, { backgroundColor: themeColors.textSecondary, opacity: 0.15 }]} />
         <View style={[styles.eventItemDetails, { flex: 1, paddingVertical: 12 }]}>
@@ -48,15 +50,21 @@ const EventListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulse
         <View style={styles.chevronBox}>
           <View style={[styles.skeletonLine, { width: 14, height: 14, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 7 }]} />
         </View>
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
 
-const EventScheduleSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const EventScheduleSkeleton = ({ themeColors }: { themeColors: any }) => (
   <View style={styles.timelineContainer}>
     {[1, 2, 3].map((i, index) => (
-      <Animated.View key={i} style={[styles.timelineNode, { opacity: pulseAnim }]}>
+      <EaseView
+        key={i}
+        style={styles.timelineNode}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
+      >
         {/* Left Timeline bar */}
         <View style={styles.timelineIndicators}>
           <View style={[styles.timelineDot, { backgroundColor: themeColors.border || '#e2e8f0' }]} />
@@ -76,7 +84,7 @@ const EventScheduleSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; p
           <View style={[styles.skeletonLine, { width: '80%', height: 15, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 6, marginBottom: 8 }]} />
           <View style={[styles.skeletonLine, { width: '50%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6 }]} />
         </View>
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
@@ -112,34 +120,6 @@ export default function EventsScreen() {
     }
     setRefreshing(false);
   };
-
-  const pulseAnim = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    let animation: Animated.CompositeAnimation | null = null;
-    if (loading || sessionsLoading) {
-      animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.7,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0.3,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      animation.start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-    return () => {
-      if (animation) animation.stop();
-    };
-  }, [loading, sessionsLoading]);
 
   useEffect(() => {
     fetchEvents();
@@ -290,7 +270,7 @@ export default function EventsScreen() {
             <Text style={[styles.timelineHeader, { color: themeColors.text }]}>Program Schedule</Text>
 
             {sessionsLoading ? (
-              <EventScheduleSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+              <EventScheduleSkeleton themeColors={themeColors} />
             ) : sessions.length > 0 ? (
               <View style={styles.timelineContainer}>
                 {sessions.map((session, index) => (
@@ -365,7 +345,7 @@ export default function EventsScreen() {
 
           {loading ? (
             <View style={{ paddingTop: 72 + insets.top }}>
-              <EventListSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+              <EventListSkeleton themeColors={themeColors} />
             </View>
           ) : events.length > 0 ? (
              <FlatList

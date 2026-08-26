@@ -12,8 +12,8 @@ import {
   Platform,
   Alert,
   TextInput,
-  Animated,
 } from 'react-native';
+import { EaseView } from 'react-native-ease';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -90,58 +90,67 @@ const GlossyOverlay = ({ isDark }: { isDark: boolean }) => (
   </>
 );
 
-const DevotionalSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
-  <Animated.View style={[styles.devotionalCardFallback, { borderColor: themeColors.border || '#e2e8f0', opacity: pulseAnim }]}>
+const DevotionalSkeleton = ({ themeColors }: { themeColors: any }) => (
+  <EaseView
+    style={[styles.devotionalCardFallback, { borderColor: themeColors.border || '#e2e8f0' }]}
+    initialAnimate={{ opacity: 0.3 }}
+    animate={{ opacity: 0.7 }}
+    transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
+  >
     <View style={[styles.skeletonLine, { width: '40%', height: 16, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 8, marginBottom: 16 }]} />
     <View style={[styles.skeletonLine, { width: '80%', height: 24, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 8, marginBottom: 12 }]} />
     <View style={[styles.skeletonLine, { width: '60%', height: 14, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 8, marginBottom: 12 }]} />
     <View style={[styles.skeletonLine, { width: '100%', height: 14, backgroundColor: themeColors.textSecondary, opacity: 0.15, borderRadius: 8, marginBottom: 8 }]} />
     <View style={[styles.skeletonLine, { width: '90%', height: 14, backgroundColor: themeColors.textSecondary, opacity: 0.15, borderRadius: 8, marginBottom: 8 }]} />
-  </Animated.View>
+  </EaseView>
 );
 
-const MessageSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const MessageSkeleton = ({ themeColors }: { themeColors: any }) => (
   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
     {[1, 2, 3].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.messageCard,
           {
             borderColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={[styles.audioThumbnail, { backgroundColor: themeColors.textSecondary, opacity: 0.15 }]} />
         <View style={[styles.skeletonLine, { width: '90%', height: 14, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 6, marginTop: 10, marginBottom: 6 }]} />
         <View style={[styles.skeletonLine, { width: '60%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6 }]} />
-      </Animated.View>
+      </EaseView>
     ))}
   </ScrollView>
 );
 
-const EventSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const EventSkeleton = ({ themeColors }: { themeColors: any }) => (
   <View>
     {[1, 2].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.eventCard,
           {
             borderColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
             flexDirection: 'row',
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={[styles.eventImage, { backgroundColor: themeColors.textSecondary, opacity: 0.15 }]} />
         <View style={[styles.eventDetails, { flex: 1, paddingVertical: 10 }]}>
           <View style={[styles.skeletonLine, { width: '80%', height: 16, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 6, marginBottom: 8 }]} />
-          <View style={[styles.skeletonLine, { width: '50%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6, marginBottom: 6 }]} />
-          <View style={[styles.skeletonLine, { width: '60%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6 }]} />
+          <View style={[styles.skeletonLine, { width: '50%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6, marginBottom: 8 }]} />
+          <View style={[styles.skeletonLine, { width: '30%', height: 12, backgroundColor: themeColors.primary, opacity: 0.2, borderRadius: 6 }]} />
         </View>
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
@@ -173,34 +182,6 @@ export default function HomeScreen() {
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const pulseAnim = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    let animation: Animated.CompositeAnimation | null = null;
-    if (loading) {
-      animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.7,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0.3,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      animation.start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-    return () => {
-      if (animation) animation.stop();
-    };
-  }, [loading]);
 
   const fetchData = async (forceRefresh = false) => {
     try {
@@ -494,7 +475,7 @@ export default function HomeScreen() {
               {/* Daily Devotional Card (Linear Gradient Style) */}
               <View style={styles.section}>
                 {loading ? (
-                  <DevotionalSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+                  <DevotionalSkeleton themeColors={themeColors} />
                 ) : devotional && devotional.title && devotional.content ? (
                   <TouchableOpacity
                     style={styles.devotionalTouch}
@@ -633,7 +614,7 @@ export default function HomeScreen() {
                 </View>
 
                 {loading ? (
-                  <MessageSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+                  <MessageSkeleton themeColors={themeColors} />
                 ) : recentSeries.length > 0 ? (
                   <ScrollView
                     horizontal
@@ -693,7 +674,7 @@ export default function HomeScreen() {
                 </View>
 
                 {loading ? (
-                  <EventSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+                  <EventSkeleton themeColors={themeColors} />
                 ) : upcomingEvents.length > 0 ? (
                   upcomingEvents.map((evt) => (
                     <TouchableOpacity

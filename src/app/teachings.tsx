@@ -12,10 +12,10 @@ import {
   TextInput,
   Alert,
   BackHandler,
-  Animated,
   RefreshControl,
   Platform,
 } from 'react-native';
+import { EaseView } from 'react-native-ease';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiService, Series, Message } from '../services/api';
 import { useAudio } from '../contexts/AudioContext';
@@ -57,45 +57,49 @@ const GlossyOverlay = ({ isDark }: { isDark: boolean }) => (
   </>
 );
 
-const SeriesGridSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const SeriesGridSkeleton = ({ themeColors }: { themeColors: any }) => (
   <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 8 }}>
     {[1, 2, 3, 4, 5, 6].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.gridCard,
           {
             borderColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
             flex: 0,
             width: (width - 48) / 2,
             margin: 8,
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={[styles.seriesCover, { backgroundColor: themeColors.textSecondary, opacity: 0.15 }]} />
         <View style={styles.cardDetails}>
           <View style={[styles.skeletonLine, { width: '80%', height: 14, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 6, marginBottom: 8 }]} />
           <View style={[styles.skeletonLine, { width: '40%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6 }]} />
         </View>
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
 
-const SeriesListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const SeriesListSkeleton = ({ themeColors }: { themeColors: any }) => (
   <View style={{ paddingHorizontal: 16 }}>
     {[1, 2, 3, 4, 5].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.listCard,
           {
             borderColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
             marginBottom: 12,
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={[styles.listSeriesCover, { backgroundColor: themeColors.textSecondary, opacity: 0.15 }]} />
         <View style={styles.listCardDetails}>
@@ -103,24 +107,26 @@ const SeriesListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; puls
           <View style={[styles.skeletonLine, { width: '50%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6, marginBottom: 8 }]} />
           <View style={[styles.skeletonLine, { width: '30%', height: 12, backgroundColor: themeColors.primary, opacity: 0.2, borderRadius: 6 }]} />
         </View>
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
 
-const TrackListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const TrackListSkeleton = ({ themeColors }: { themeColors: any }) => (
   <View style={styles.tracksSection}>
     {[1, 2, 3, 4, 5].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.trackRow,
           {
             borderBottomColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
             paddingVertical: 14,
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
           <View style={[styles.skeletonLine, { width: 20, height: 14, backgroundColor: themeColors.textSecondary, opacity: 0.2, marginRight: 12 }]} />
@@ -130,7 +136,7 @@ const TrackListSkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulse
             <View style={[styles.skeletonLine, { width: '50%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6 }]} />
           </View>
         </View>
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
@@ -177,34 +183,6 @@ export default function TeachingsScreen() {
     }
     setRefreshing(false);
   };
-
-  const pulseAnim = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    let animation: Animated.CompositeAnimation | null = null;
-    if (seriesLoading || messagesLoading) {
-      animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.7,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0.3,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      animation.start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-    return () => {
-      if (animation) animation.stop();
-    };
-  }, [seriesLoading, messagesLoading]);
 
   useEffect(() => {
     fetchInitialData();
@@ -511,7 +489,7 @@ export default function TeachingsScreen() {
           </View>
 
           {messagesLoading ? (
-            <TrackListSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+            <TrackListSkeleton themeColors={themeColors} />
           ) : seriesMessages.length > 0 ? (
             <>
               {/* Play All & Shuffle Buttons */}
@@ -681,9 +659,9 @@ export default function TeachingsScreen() {
           {seriesLoading ? (
             <View style={{ paddingTop: 78 + insets.top }}>
               {isGridView ? (
-                <SeriesGridSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+                <SeriesGridSkeleton themeColors={themeColors} />
               ) : (
-                <SeriesListSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+                <SeriesListSkeleton themeColors={themeColors} />
               )}
             </View>
           ) : (

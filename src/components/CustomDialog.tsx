@@ -1,14 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
   Modal,
-  Animated,
   useColorScheme,
   Dimensions,
 } from 'react-native';
+import { EaseView } from 'react-native-ease';
 import { Colors } from '../constants/theme';
 import { useAudio } from '../contexts/AudioContext';
 
@@ -42,50 +42,37 @@ export default function CustomDialog({
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
   const themeColors = Colors[activeScheme === 'dark' ? 'dark' : 'light'];
 
-  const anim = useRef(new Animated.Value(0)).current;
-  const isClosingRef = useRef(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [mounted, setMounted] = useState(visible);
+  const pendingCallbackRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
     if (visible) {
-      isClosingRef.current = false;
-      anim.setValue(0);
-      Animated.spring(anim, {
-        toValue: 1,
-        useNativeDriver: true,
-        damping: 20,
-        mass: 0.8,
-      }).start();
+      setMounted(true);
+      setIsClosing(false);
     }
   }, [visible]);
 
   const handleClose = (callback?: () => void) => {
-    if (isClosingRef.current) return;
-    isClosingRef.current = true;
-
-    Animated.timing(anim, {
-      toValue: 0,
-      duration: 150,
-      useNativeDriver: true,
-    }).start(() => {
-      onClose();
-      isClosingRef.current = false;
-      if (callback) {
-        callback();
-      }
-    });
+    if (isClosing) return;
+    pendingCallbackRef.current = callback;
+    setIsClosing(true);
   };
 
-  const scale = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.92, 1],
-  });
+  const handleTransitionEnd = (finished: boolean) => {
+    if (finished && isClosing) {
+      setMounted(false);
+      setIsClosing(false);
+      onClose();
+      if (pendingCallbackRef.current) {
+        const cb = pendingCallbackRef.current;
+        pendingCallbackRef.current = undefined;
+        cb();
+      }
+    }
+  };
 
-  const opacity = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  });
-
-  if (!visible) return null;
+  if (!visible && !mounted) return null;
 
   const isDark = activeScheme === 'dark';
   const isVerticalButtons = buttons.length > 2 || buttons.some(b => b.text.length > 14);
@@ -94,14 +81,19 @@ export default function CustomDialog({
     <Modal
       animationType="none"
       transparent={true}
-      visible={visible}
+      visible={visible || mounted}
       onRequestClose={() => {
         if (dismissable) handleClose();
       }}
     >
       <View style={styles.overlay}>
         {/* Animated backdrop */}
-        <Animated.View style={[styles.backdrop, { opacity }]}>
+        <EaseView
+          style={styles.backdrop}
+          initialAnimate={{ opacity: 0 }}
+          animate={{ opacity: isClosing ? 0 : 1 }}
+          transition={{ type: 'timing', duration: 150, easing: 'easeInOut' }}
+        >
           <TouchableOpacity
             style={StyleSheet.absoluteFillObject}
             activeOpacity={1}
@@ -109,19 +101,28 @@ export default function CustomDialog({
               if (dismissable) handleClose();
             }}
           />
-        </Animated.View>
+        </EaseView>
 
         {/* Centered Dialog Card */}
-        <Animated.View
+        <EaseView
           style={[
             styles.dialogContainer,
             {
               backgroundColor: isDark ? '#1e293b' : '#ffffff',
               borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(27, 84, 164, 0.08)',
-              opacity,
-              transform: [{ scale }],
             },
           ]}
+          initialAnimate={{ opacity: 0, scale: 0.92 }}
+          animate={{
+            opacity: isClosing ? 0 : 1,
+            scale: isClosing ? 0.92 : 1,
+          }}
+          transition={
+            isClosing
+              ? { type: 'timing', duration: 150, easing: 'easeInOut' }
+              : { type: 'spring', damping: 20, mass: 0.8, stiffness: 120 }
+          }
+          onTransitionEnd={({ finished }) => handleTransitionEnd(finished)}
         >
           {title ? (
             <Text style={[styles.title, { color: themeColors.text }]}>
@@ -196,7 +197,7 @@ export default function CustomDialog({
               );
             })}
           </View>
-        </Animated.View>
+        </EaseView>
       </View>
     </Modal>
   );

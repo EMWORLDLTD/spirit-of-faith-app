@@ -9,13 +9,13 @@ import {
   ActivityIndicator,
   Share,
   Dimensions,
-  Animated,
   RefreshControl,
   Platform,
   Pressable,
   Alert,
   Image,
 } from 'react-native';
+import { EaseView } from 'react-native-ease';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiService, Devotional, getDevotionalBannerUrl } from '../services/api';
@@ -44,9 +44,13 @@ const MONTHS = [
   { value: 12, label: 'December' },
 ];
 
-const DevotionalDetailSkeleton = ({ themeColors, pulseAnim, insets }: { themeColors: any; pulseAnim: any; insets: any }) => (
+const DevotionalDetailSkeleton = ({ themeColors, insets }: { themeColors: any; insets: any }) => (
   <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: 112 + insets.top, paddingBottom: 150 + insets.bottom }]} showsVerticalScrollIndicator={false}>
-    <Animated.View style={{ opacity: pulseAnim }}>
+    <EaseView
+      initialAnimate={{ opacity: 0.3 }}
+      animate={{ opacity: 0.7 }}
+      transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
+    >
       {/* Header */}
       <View style={[styles.devotionalHeader, { borderBottomWidth: 0, paddingHorizontal: 0 }]}>
         <View style={[styles.skeletonLine, { width: '75%', height: 26, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 8, marginBottom: 12 }]} />
@@ -91,30 +95,32 @@ const DevotionalDetailSkeleton = ({ themeColors, pulseAnim, insets }: { themeCol
         <View style={[styles.skeletonLine, { width: '100%', height: 14, backgroundColor: themeColors.text, opacity: 0.15, borderRadius: 6, marginBottom: 6 }]} />
         <View style={[styles.skeletonLine, { width: '90%', height: 14, backgroundColor: themeColors.text, opacity: 0.15, borderRadius: 6 }]} />
       </View>
-    </Animated.View>
+    </EaseView>
   </ScrollView>
 );
 
-const DevotionalHistorySkeleton = ({ themeColors, pulseAnim }: { themeColors: any; pulseAnim: any }) => (
+const DevotionalHistorySkeleton = ({ themeColors }: { themeColors: any }) => (
   <View style={{ paddingHorizontal: 20, gap: 16 }}>
     {[1, 2, 3, 4, 5].map((i) => (
-      <Animated.View
+      <EaseView
         key={i}
         style={[
           styles.historyRow,
           {
             borderBottomColor: themeColors.border || '#e2e8f0',
-            opacity: pulseAnim,
             paddingVertical: 16,
           }
         ]}
+        initialAnimate={{ opacity: 0.3 }}
+        animate={{ opacity: 0.7 }}
+        transition={{ type: 'timing', duration: 800, loop: 'reverse', easing: 'easeInOut' }}
       >
         <View style={{ flex: 1 }}>
           <View style={[styles.skeletonLine, { width: '70%', height: 15, backgroundColor: themeColors.text, opacity: 0.2, borderRadius: 6, marginBottom: 6 }]} />
           <View style={[styles.skeletonLine, { width: '30%', height: 12, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 6 }]} />
         </View>
         <View style={[styles.skeletonLine, { width: 14, height: 14, backgroundColor: themeColors.textSecondary, opacity: 0.2, borderRadius: 7 }]} />
-      </Animated.View>
+      </EaseView>
     ))}
   </View>
 );
@@ -130,12 +136,10 @@ let todayDevotionalCache: Devotional | null = null;
 const DevotionalCoverBanner = React.memo(({ url, activeScheme }: { url?: string | null; activeScheme?: string | null }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     setIsLoaded(false);
     setHasError(false);
-    fadeAnim.setValue(0);
     if (url) {
       Image.prefetch(url).catch(() => {});
     }
@@ -145,14 +149,16 @@ const DevotionalCoverBanner = React.memo(({ url, activeScheme }: { url?: string 
 
   return (
     <View style={[styles.devotionalBannerWrapper, !isLoaded && styles.devotionalBannerHidden]}>
-      <Animated.View
+      <EaseView
         style={[
           styles.devotionalBannerContainer,
           {
-            opacity: fadeAnim,
             borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(27, 84, 164, 0.1)',
           },
         ]}
+        initialAnimate={{ opacity: 0 }}
+        animate={{ opacity: isLoaded ? 1 : 0 }}
+        transition={{ type: 'timing', duration: 250, easing: 'easeInOut' }}
       >
         <Image
           source={{ uri: url }}
@@ -160,18 +166,13 @@ const DevotionalCoverBanner = React.memo(({ url, activeScheme }: { url?: string 
           resizeMode="cover"
           onLoad={() => {
             setIsLoaded(true);
-            Animated.timing(fadeAnim, {
-              toValue: 1,
-              duration: 250,
-              useNativeDriver: true,
-            }).start();
           }}
           onError={() => {
             setHasError(true);
             setIsLoaded(false);
           }}
         />
-      </Animated.View>
+      </EaseView>
     </View>
   );
 });
@@ -393,34 +394,6 @@ export default function DevotionalsScreen() {
   const [selectedDevotional, setSelectedDevotional] = useState<Devotional | null>(null);
 
   const monthsScrollRef = React.useRef<ScrollView>(null);
-
-  const pulseAnim = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    let animation: Animated.CompositeAnimation | null = null;
-    if (todayLoading || historyLoading) {
-      animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.7,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0.3,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      animation.start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-    return () => {
-      if (animation) animation.stop();
-    };
-  }, [todayLoading, historyLoading]);
 
   useEffect(() => {
     fetchTodayDevotional();
@@ -702,7 +675,7 @@ export default function DevotionalsScreen() {
       <View style={styles.contentContainer}>
         {activeTab === 'today' ? (
           todayLoading ? (
-            <DevotionalDetailSkeleton themeColors={themeColors} pulseAnim={pulseAnim} insets={insets} />
+            <DevotionalDetailSkeleton themeColors={themeColors} insets={insets} />
           ) : todayDevotional && todayDevotional.title && todayDevotional.content ? (
             <ScrollView 
               contentContainerStyle={[
@@ -990,7 +963,7 @@ export default function DevotionalsScreen() {
 
               {/* Archives list */}
               {historyLoading ? (
-                <DevotionalHistorySkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
+                <DevotionalHistorySkeleton themeColors={themeColors} />
               ) : historyDevotionals.length > 0 ? (
                 <ScrollView contentContainerStyle={[styles.listContainer, { paddingBottom: 150 + insets.bottom }]}>
                   {historyDevotionals.map((dev) => (
