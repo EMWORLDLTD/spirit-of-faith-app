@@ -50,7 +50,15 @@
           "enableBackgroundPlayback": true
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1B54A4",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

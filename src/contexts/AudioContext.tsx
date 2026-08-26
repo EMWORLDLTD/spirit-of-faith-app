@@ -52,6 +52,8 @@ interface AudioContextType {
   // Playback settings
   resumeFromStopped: boolean;
   setResumeFromStopped: (value: boolean) => Promise<void>;
+  showDevotionalCover: boolean;
+  setShowDevotionalCover: (value: boolean) => Promise<void>;
 
   // Global Player Expanded State
   isPlayerExpanded: boolean;
@@ -83,6 +85,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [downloadedTracks, setDownloadedTracks] = useState<Message[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<Record<string | number, number>>({});
   const [resumeFromStopped, setResumeFromStoppedState] = useState<boolean>(true);
+  const [showDevotionalCover, setShowDevotionalCoverState] = useState<boolean>(true);
   const [isPlayerExpanded, setIsPlayerExpanded] = useState<boolean>(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [skipInterval, setSkipInterval] = useState<number>(15);
@@ -130,6 +133,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const storedResumeSetting = await AsyncStorage.getItem('SOF_SETTINGS_RESUME_PLAYBACK');
         if (storedResumeSetting !== null) {
           setResumeFromStoppedState(JSON.parse(storedResumeSetting));
+        }
+        const storedShowCover = await AsyncStorage.getItem('SOF_SETTINGS_SHOW_DEVOTIONAL_COVER');
+        if (storedShowCover !== null) {
+          setShowDevotionalCoverState(JSON.parse(storedShowCover));
+        } else {
+          setShowDevotionalCoverState(true);
         }
         const storedPositions = await AsyncStorage.getItem('SOF_PLAYBACK_POSITIONS');
         if (storedPositions) {
@@ -312,6 +321,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       await AsyncStorage.setItem('SOF_SETTINGS_RESUME_PLAYBACK', JSON.stringify(value));
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  const setShowDevotionalCover = async (value: boolean) => {
+    setShowDevotionalCoverState(value);
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.setItem('SOF_SETTINGS_SHOW_DEVOTIONAL_COVER', JSON.stringify(value));
     } catch (e) {
       console.warn(e);
     }
@@ -934,6 +953,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         shareTrack,
         resumeFromStopped,
         setResumeFromStopped,
+        showDevotionalCover,
+        setShowDevotionalCover,
         isPlayerExpanded,
         setIsPlayerExpanded,
         repeatMode,

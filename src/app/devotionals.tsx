@@ -14,10 +14,11 @@ import {
   Platform,
   Pressable,
   Alert,
+  Image,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiService, Devotional } from '../services/api';
+import { apiService, Devotional, getDevotionalBannerUrl } from '../services/api';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
 import { useAudio } from '../contexts/AudioContext';
@@ -126,9 +127,58 @@ interface DevotionalCacheEntry {
 const devotionalHistoryCache: Record<string, DevotionalCacheEntry> = {};
 let todayDevotionalCache: Devotional | null = null;
 
+const DevotionalCoverBanner = React.memo(({ url, activeScheme }: { url?: string | null; activeScheme?: string | null }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    setIsLoaded(false);
+    setHasError(false);
+    fadeAnim.setValue(0);
+    if (url) {
+      Image.prefetch(url).catch(() => {});
+    }
+  }, [url]);
+
+  if (!url || hasError) return null;
+
+  return (
+    <View style={[styles.devotionalBannerWrapper, !isLoaded && styles.devotionalBannerHidden]}>
+      <Animated.View
+        style={[
+          styles.devotionalBannerContainer,
+          {
+            opacity: fadeAnim,
+            borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(27, 84, 164, 0.1)',
+          },
+        ]}
+      >
+        <Image
+          source={{ uri: url }}
+          style={styles.devotionalBannerImage}
+          resizeMode="cover"
+          onLoad={() => {
+            setIsLoaded(true);
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 250,
+              useNativeDriver: true,
+            }).start();
+          }}
+          onError={() => {
+            setHasError(true);
+            setIsLoaded(false);
+          }}
+        />
+      </Animated.View>
+    </View>
+  );
+});
+
 export default function DevotionalsScreen() {
   const systemScheme = useColorScheme();
-  const { themeMode, currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
+  const { themeMode, currentTrack, isPlaying, playTrack, togglePlayPause, showDevotionalCover } = useAudio();
   const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
   const activeScheme = themeMode === 'system' ? systemScheme : themeMode;
@@ -286,12 +336,14 @@ export default function DevotionalsScreen() {
       return;
     }
 
+    const bannerUrl = dev.thumbnailUrl || getDevotionalBannerUrl(dev.date, { width: 600, height: 600 });
+
     const devotionalTrack = {
       messageId: `devotional_${dev.devotionalId}`,
       title: dev.title,
       speaker: 'Spirit of Faith Devotional',
       audioUrl: validAudioUri,
-      coverUrl: dev.thumbnailUrl || undefined,
+      coverUrl: bannerUrl || undefined,
       publishedDate: dev.date || new Date().toISOString(),
       seriesName: 'Daily Devotional',
     };
@@ -673,6 +725,13 @@ export default function DevotionalsScreen() {
                 />
               }
             >
+              {showDevotionalCover ? (
+                <DevotionalCoverBanner
+                  url={todayDevotional.thumbnailUrl || getDevotionalBannerUrl(todayDevotional.date)}
+                  activeScheme={activeScheme}
+                />
+              ) : null}
+
               <View style={styles.devotionalHeader}>
                 <Text style={[styles.devotionalTitle, { color: themeColors.text }]}>
                   {todayDevotional.title}
@@ -780,6 +839,13 @@ export default function DevotionalsScreen() {
           selectedDevotional ? (
             /* INDIVIDUAL EXPANDED VIEW */
             <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: 60 + insets.top, paddingBottom: 150 + insets.bottom }]} showsVerticalScrollIndicator={false}>
+
+              {showDevotionalCover ? (
+                <DevotionalCoverBanner
+                  url={selectedDevotional.thumbnailUrl || getDevotionalBannerUrl(selectedDevotional.date)}
+                  activeScheme={activeScheme}
+                />
+              ) : null}
 
               <View style={styles.devotionalHeader}>
                 <Text style={[styles.devotionalTitle, { color: themeColors.text }]}>
@@ -1072,6 +1138,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     fontWeight: '500',
+  },
+  devotionalBannerWrapper: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  devotionalBannerHidden: {
+    height: 0,
+    marginBottom: 0,
+    overflow: 'hidden',
+    opacity: 0,
+  },
+  devotionalBannerContainer: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  devotionalBannerImage: {
+    width: '100%',
+    height: '100%',
   },
   devotionalHeader: {
     marginBottom: 20,

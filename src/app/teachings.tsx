@@ -23,7 +23,7 @@ import { useAlert } from '../contexts/AlertContext';
 import { Colors } from '../constants/theme';
 import { useColorScheme } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Search, Play, Download, ChevronRight, ChevronLeft, Eye, Music, Award, Volume2, Pause, Check, LayoutGrid, LayoutList, Shuffle } from 'lucide-react-native';
+import { Search, Play, Download, ChevronRight, ChevronLeft, Eye, Music, Award, Volume2, Pause, Check, LayoutGrid, LayoutList, Shuffle, RefreshCw } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import BlurHeader from '../components/BlurHeader';
 
@@ -616,9 +616,32 @@ export default function TeachingsScreen() {
             </View>
             </>
           ) : (
-            <Text style={[styles.emptyText, { color: themeColors.textSecondary, marginTop: 40 }]}>
-              No tracks found in this series.
-            </Text>
+            <View style={styles.emptyContainer}>
+              <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+                No tracks found in this series.
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.subtleRefreshBtn,
+                  {
+                    borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(27, 84, 164, 0.2)',
+                    backgroundColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(27, 84, 164, 0.04)',
+                  }
+                ]}
+                onPress={onRefresh}
+                activeOpacity={0.7}
+                disabled={refreshing}
+              >
+                {refreshing ? (
+                  <ActivityIndicator size="small" color={themeColors.primary} />
+                ) : (
+                  <>
+                    <RefreshCw size={14} color={themeColors.primary} />
+                    <Text style={[styles.subtleRefreshText, { color: themeColors.primary }]}>Refresh</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
         </ScrollView>
       ) : (
@@ -663,7 +686,7 @@ export default function TeachingsScreen() {
                 <SeriesListSkeleton themeColors={themeColors} pulseAnim={pulseAnim} />
               )}
             </View>
-          ) : filteredSeries.length > 0 ? (
+          ) : (
             <FlatList
               key={isGridView ? 'grid' : 'list'}
               contentInset={Platform.OS === 'ios' ? { top: 78 + insets.top } : undefined}
@@ -682,8 +705,40 @@ export default function TeachingsScreen() {
               numColumns={isGridView ? 2 : 1}
               contentContainerStyle={[
                 isGridView ? styles.gridContainer : styles.listContainer, 
-                { paddingTop: Platform.OS === 'android' ? 78 + insets.top : 0, paddingBottom: 150 + insets.bottom }
+                { 
+                  paddingTop: Platform.OS === 'android' ? 78 + insets.top : 0, 
+                  paddingBottom: 150 + insets.bottom,
+                  flexGrow: 1,
+                }
               ]}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+                    No teachings or series found.
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.subtleRefreshBtn,
+                      {
+                        borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(27, 84, 164, 0.2)',
+                        backgroundColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(27, 84, 164, 0.04)',
+                      }
+                    ]}
+                    onPress={onRefresh}
+                    activeOpacity={0.7}
+                    disabled={refreshing}
+                  >
+                    {refreshing ? (
+                      <ActivityIndicator size="small" color={themeColors.primary} />
+                    ) : (
+                      <>
+                        <RefreshCw size={14} color={themeColors.primary} />
+                        <Text style={[styles.subtleRefreshText, { color: themeColors.primary }]}>Refresh</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              }
               renderItem={({ item }) => isGridView ? (
                 <TouchableOpacity
                   style={[
@@ -755,10 +810,6 @@ export default function TeachingsScreen() {
                 </TouchableOpacity>
               )}
             />
-          ) : (
-            <View style={styles.center}>
-              <Text style={{ color: themeColors.textSecondary }}>No teachings or series found.</Text>
-            </View>
           )}
         </View>
       )}
@@ -974,10 +1025,34 @@ const styles = StyleSheet.create({
   actionButton: {
     padding: 8,
   },
+  emptyContainer: {
+    flex: 1,
+    minHeight: 320,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+  },
   emptyText: {
-    fontSize: 14,
-    fontStyle: 'italic',
+    fontSize: 15,
+    fontWeight: '500',
     textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  subtleRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  subtleRefreshText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   toggleBtn: {
     width: 46,

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Tabs, usePathname, useNavigation } from 'expo-router';
+import { Tabs, usePathname, useNavigation, useRouter } from 'expo-router';
 import { useColorScheme, View, StyleSheet, Animated, Text, BackHandler, ToastAndroid, Platform } from 'react-native';
 import { useNetInfo } from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
 import { Colors } from '../constants/theme';
 import { AudioProvider, useAudio } from '../contexts/AudioContext';
 import { AlertProvider } from '../contexts/AlertContext';
@@ -11,6 +12,8 @@ import { StatusBar } from 'expo-status-bar';
 import { Home, Music, BookOpen, Calendar, MapPin, MoreHorizontal, Library } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { registerForPushNotificationsAsync } from '../services/notificationService';
+import { apiService } from '../services/api';
 
 export default function RootLayout() {
   return (
@@ -24,11 +27,56 @@ export default function RootLayout() {
 
 function AppContent() {
   const systemScheme = useColorScheme();
-  const { themeMode } = useAudio();
+  const { themeMode, playTrack } = useAudio();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const navigation = useNavigation();
+  const router = useRouter();
   const lastBackPress = useRef<number>(0);
+
+  // Initialize push notifications and handle deep-linking on notification tap
+  useEffect(() => {
+    // 1. Register for push notifications on device launch
+    registerForPushNotificationsAsync();
+
+    // 2. Handle notification tap when app is in background or closed
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      try {
+        const data: any = response.notification.request.content.data;
+        if (!data) return;
+
+        // Route to Audio Teaching
+        if (data.type === 'audio') {
+          if (data.audioUrl) {
+            await playTrack({
+              messageId: (data.audioId as string | number) || `notif-track-${Date.now()}`,
+              title: String(data.title || response.notification.request.content.title || 'Audio Teaching'),
+              speaker: String(data.speaker || 'Spirit of Faith'),
+              audioUrl: String(data.audioUrl),
+              publishedDate: new Date().toISOString(),
+              coverUrl: data.imageUrl ? String(data.imageUrl) : undefined,
+            });
+          } else {
+            router.push('/teachings' as any);
+          }
+        } 
+        // Route to Daily Devotional
+        else if (data.type === 'devotional') {
+          router.push('/devotionals' as any);
+        }
+        // Route to Church Events
+        else if (data.type === 'event') {
+          router.push('/events' as any);
+        }
+      } catch (err) {
+        console.warn('Error processing notification tap deep-link:', err);
+      }
+    });
+
+    return () => {
+      responseSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;

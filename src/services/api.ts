@@ -71,6 +71,61 @@ export interface ChurchEvent {
   isPublished: boolean;
 }
 
+// Cloudinary helper to automatically format any Cloudinary URL with f_auto, q_auto and optional resizing
+export const getOptimizedCloudinaryUrl = (
+  url?: string,
+  options?: { width?: number; height?: number; crop?: string }
+): string | undefined => {
+  if (!url) return undefined;
+  if (!url.includes('res.cloudinary.com')) return url;
+
+  if (url.includes('/image/upload/')) {
+    const parts = url.split('/image/upload/');
+    const prefix = parts[0];
+    const rest = parts[1];
+
+    // If it already has both f_auto and q_auto, return as is
+    if (rest.includes('f_auto') && rest.includes('q_auto')) {
+      return url;
+    }
+
+    const transformParts: string[] = [];
+    if (options?.width && options?.height) {
+      transformParts.push(`c_${options.crop || 'fill'},w_${options.width},h_${options.height}`);
+    }
+    transformParts.push('q_auto', 'f_auto');
+    const transformStr = transformParts.join(',');
+
+    return `${prefix}/image/upload/${transformStr}/${rest}`;
+  }
+
+  return url;
+};
+
+// Cloudinary helper to compute deterministic devotional cover banner URLs
+export const getDevotionalBannerUrl = (
+  dateStr?: string,
+  options?: { width?: number; height?: number; crop?: string; quality?: string }
+): string | undefined => {
+  if (!dateStr) return undefined;
+  const dateClean = dateStr.split('T')[0];
+  const parts = dateClean.split('-');
+  if (parts.length !== 3) return undefined;
+  const [yyyy, mm, dd] = parts;
+  if (!yyyy || !mm || !dd) return undefined;
+
+  const transformations: string[] = [];
+  const width = options?.width || 1080;
+  const height = options?.height || 1080;
+  const crop = options?.crop || 'fill';
+  transformations.push(`c_${crop},w_${width},h_${height}`);
+  transformations.push(options?.quality ? `q_${options.quality}` : 'q_auto:best');
+  transformations.push('f_auto');
+
+  const transformStr = transformations.join(',');
+  return `https://res.cloudinary.com/ggfhaver/image/upload/${transformStr}/devotionals/${yyyy}_${mm}_${dd}.jpg`;
+};
+
 // Helper to map backend devotional object to UI Devotional interface
 const mapDevotional = (d: any): Devotional => {
   let content = d.content || '';
@@ -106,16 +161,21 @@ const mapDevotional = (d: any): Devotional => {
     }
   }
 
+  const dateFormatted = d.date ? d.date.split('T')[0] : '';
+  const calculatedBanner = getDevotionalBannerUrl(dateFormatted, { width: 600, height: 600 });
+  const rawThumbnail = d.thumbnailUrl || d.bannerUrl || d.coverUrl || calculatedBanner || '';
+  const finalThumbnail = getOptimizedCloudinaryUrl(rawThumbnail) || '';
+
   return {
     devotionalId: d.id || d.devotionalId,
     title: d.title || '',
     content: content,
-    date: d.date ? d.date.split('T')[0] : '',
+    date: dateFormatted,
     bibleReading: d.scriptureText || d.bibleReading || '',
     bibleVerse: d.scriptureVerse || d.bibleVerse || '',
     confession: confession,
     prayer: prayer,
-    thumbnailUrl: d.thumbnailUrl || '',
+    thumbnailUrl: finalThumbnail,
     audioUrl: d.audioUrl || d.audio_url || d.audio || '',
   };
 };
