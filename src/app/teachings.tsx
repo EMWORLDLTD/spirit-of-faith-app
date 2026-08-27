@@ -65,7 +65,6 @@ const SeriesGridSkeleton = ({ themeColors }: { themeColors: any }) => (
         style={[
           styles.gridCard,
           {
-            borderColor: themeColors.border || '#e2e8f0',
             flex: 0,
             width: (width - 48) / 2,
             margin: 8,
@@ -93,7 +92,6 @@ const SeriesListSkeleton = ({ themeColors }: { themeColors: any }) => (
         style={[
           styles.listCard,
           {
-            borderColor: themeColors.border || '#e2e8f0',
             marginBottom: 12,
           }
         ]}
@@ -723,12 +721,6 @@ export default function TeachingsScreen() {
                     styles.gridCard, 
                     { 
                       backgroundColor: activeScheme === 'dark' ? 'rgba(15, 23, 42, 0.55)' : '#ffffff', 
-                      borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
-                      shadowRadius: 6,
-                      elevation: 1,
                     }
                   ]}
                   onPress={() => handleSelectSeries(item)}
@@ -756,12 +748,6 @@ export default function TeachingsScreen() {
                     styles.listCard, 
                     { 
                       backgroundColor: activeScheme === 'dark' ? 'rgba(15, 23, 42, 0.55)' : '#ffffff', 
-                      borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
-                      shadowRadius: 6,
-                      elevation: 1,
                     }
                   ]}
                   onPress={() => handleSelectSeries(item)}
@@ -840,7 +826,6 @@ const styles = StyleSheet.create({
     margin: 8,
     borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: 1,
     maxWidth: (width - 32) / 2,
   },
   seriesCover: {
@@ -1047,7 +1032,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 1,
     marginBottom: 8,
     alignItems: 'center',
     position: 'relative',

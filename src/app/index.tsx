@@ -19,6 +19,7 @@ import { router, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
 import { apiService, Devotional, Message, ChurchEvent, Category, Series } from '../services/api';
+import { announcementService, AppAnnouncement } from '../services/announcementService';
 import { useAudio } from '../contexts/AudioContext';
 import { useAlert } from '../contexts/AlertContext';
 import { Colors } from '../constants/theme';
@@ -171,6 +172,8 @@ export default function HomeScreen() {
   const [recentSeries, setRecentSeries] = useState<ExtendedSeries[]>([]);
   const [allMessages, setAllMessages] = useState<Message[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<ChurchEvent[]>([]);
+  const [announcements, setAnnouncements] = useState<AppAnnouncement[]>([]);
+  const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
 
   // Search states
   const [isSearching, setIsSearching] = useState(false);
@@ -183,17 +186,32 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const openAnnouncementsModal = async () => {
+    setAnnouncementsModalVisible(true);
+    if (announcements.length > 0) {
+      await announcementService.markAsRead(announcements[0].id);
+      setHasUnreadAnnouncements(false);
+    }
+  };
+
   const fetchData = async (forceRefresh = false) => {
     try {
-      const [devResult, msgResult, eventResult, seriesResult] = await Promise.allSettled([
+      const [devResult, msgResult, eventResult, seriesResult, annResult] = await Promise.allSettled([
         apiService.getTodaysDevotional(forceRefresh),
         apiService.getRecentMessages(100, forceRefresh),
         apiService.getUpcomingEvents(forceRefresh),
         apiService.getAllSeries(forceRefresh),
+        announcementService.getAnnouncements(),
       ]);
 
       if (devResult.status === 'fulfilled') {
         setDevotional(devResult.value);
+      }
+
+      if (annResult.status === 'fulfilled') {
+        setAnnouncements(annResult.value);
+        const hasUnread = await announcementService.hasUnreadAnnouncements(annResult.value);
+        setHasUnreadAnnouncements(hasUnread);
       }
       
       const allSeries: Series[] = seriesResult.status === 'fulfilled' ? seriesResult.value : [];
@@ -403,11 +421,11 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={[styles.bellBtn, { backgroundColor: themeColors.backgroundElement }]}
-                    onPress={() => setAnnouncementsModalVisible(true)}
+                    onPress={openAnnouncementsModal}
                     activeOpacity={0.7}
                   >
                     <Bell size={20} color={themeColors.text} />
-                    <View style={styles.bellBadge} />
+                    {hasUnreadAnnouncements && <View style={styles.bellBadge} />}
                   </TouchableOpacity>
                 </View>
               </>
@@ -534,7 +552,6 @@ export default function HomeScreen() {
                       styles.gridTile, 
                       { 
                         borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                        shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
                       }
                     ]}
                     onPress={handlePlayLiveRadio}
@@ -561,7 +578,6 @@ export default function HomeScreen() {
                       styles.gridTile, 
                       { 
                         borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                        shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
                       }
                     ]}
                     onPress={() => router.navigate('/locations')}
@@ -584,7 +600,6 @@ export default function HomeScreen() {
                       styles.gridTile, 
                       { 
                         borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                        shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
                       }
                     ]}
                     onPress={() => setGivingModalVisible(true)}
@@ -628,11 +643,6 @@ export default function HomeScreen() {
                           styles.messageCard, 
                           { 
                             borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                            shadowColor: '#000',
-                            shadowOffset: { width: 0, height: 2 },
-                            shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
-                            shadowRadius: 6,
-                            elevation: 1,
                           }
                         ]}
                         onPress={() => handleSelectSeriesItem(series)}
@@ -683,11 +693,6 @@ export default function HomeScreen() {
                         styles.eventCard, 
                         { 
                           borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
-                          shadowRadius: 6,
-                          elevation: 1,
                         }
                       ]}
                       onPress={() => router.push({ pathname: '/events', params: { eventId: String(evt.eventId) } })}
@@ -769,45 +774,141 @@ export default function HomeScreen() {
         title="Announcements"
       >
         <ScrollView style={styles.announcementsList} showsVerticalScrollIndicator={false}>
-          <View style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}>
-            <Text style={[styles.announcementTitle, { color: themeColors.text }]}>Welcome to Christ Pavilion!</Text>
-            <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>June 5, 2026</Text>
-            <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]}>
-              We are delighted to welcome you to our official mobile app. Browse daily devotionals, stream teachings, and keep up with our branches!
-            </Text>
-          </View>
+          {announcements.length > 0 ? (
+            announcements.map((item) => {
+              const formattedDate = new Date(item.createdAt).toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
 
-          {upcomingEvents.length > 0 ? (
-            upcomingEvents.map((evt) => (
-              <View 
-                key={evt.eventId}
-                style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}
-              >
-                <Text style={[styles.announcementTitle, { color: themeColors.text }]}>{evt.title}</Text>
-                <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>
-                  Starts: {new Date(evt.startDate).toLocaleDateString()}
-                </Text>
-                <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]} numberOfLines={2}>
-                  {evt.description}
-                </Text>
-                <TouchableOpacity 
-                  style={styles.eventLink}
-                  onPress={() => {
-                    setAnnouncementsModalVisible(false);
-                    router.push('/events');
-                  }}
+              const isAudio = item.type === 'audio';
+              const isDevotional = item.type === 'devotional';
+              const isEvent = item.type === 'event';
+
+              return (
+                <View 
+                  key={item.id}
+                  style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}
                 >
-                  <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>View Details</Text>
-                  <ChevronRight size={14} color={themeColors.primary} />
-                </TouchableOpacity>
-              </View>
-            ))
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <View style={[styles.announcementBadge, { 
+                      backgroundColor: isDevotional ? 'rgba(245, 158, 11, 0.15)' : isAudio ? 'rgba(59, 130, 246, 0.15)' : isEvent ? 'rgba(16, 185, 129, 0.15)' : 'rgba(168, 85, 247, 0.15)' 
+                    }]}>
+                      <Text style={[styles.announcementBadgeText, { 
+                        color: isDevotional ? '#d97706' : isAudio ? '#2563eb' : isEvent ? '#059669' : '#9333ea' 
+                      }]}>
+                        {item.type || 'Notice'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.announcementDate, { color: themeColors.textSecondary, marginBottom: 0 }]}>
+                      {formattedDate}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.announcementTitle, { color: themeColors.text }]}>{item.title}</Text>
+                  {item.subtitle ? (
+                    <Text style={[styles.announcementDate, { color: themeColors.textSecondary, marginBottom: 6 }]}>
+                      {item.subtitle}
+                    </Text>
+                  ) : null}
+
+                  {item.imageUrl ? (
+                    <Image
+                      source={{ uri: item.imageUrl }}
+                      style={styles.announcementImage}
+                      resizeMode="cover"
+                    />
+                  ) : null}
+
+                  <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]}>
+                    {item.body}
+                  </Text>
+
+                  {isDevotional && (
+                    <TouchableOpacity 
+                      style={styles.eventLink}
+                      onPress={() => {
+                        setAnnouncementsModalVisible(false);
+                        router.push('/devotionals');
+                      }}
+                    >
+                      <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>Read Devotional</Text>
+                      <ChevronRight size={14} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  )}
+
+                  {isAudio && (
+                    <TouchableOpacity 
+                      style={styles.eventLink}
+                      onPress={() => {
+                        setAnnouncementsModalVisible(false);
+                        router.push('/teachings');
+                      }}
+                    >
+                      <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>Listen to Teachings</Text>
+                      <ChevronRight size={14} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  )}
+
+                  {isEvent && (
+                    <TouchableOpacity 
+                      style={styles.eventLink}
+                      onPress={() => {
+                        setAnnouncementsModalVisible(false);
+                        router.push('/events');
+                      }}
+                    >
+                      <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>View Events</Text>
+                      <ChevronRight size={14} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })
           ) : (
-            <View style={styles.center}>
-              <Text style={{ color: themeColors.textSecondary, fontStyle: 'italic', marginVertical: 20 }}>
-                No announcements at this time.
-              </Text>
-            </View>
+            <>
+              <View style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}>
+                <View style={[styles.announcementBadge, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                  <Text style={[styles.announcementBadgeText, { color: '#2563eb' }]}>Welcome</Text>
+                </View>
+                <Text style={[styles.announcementTitle, { color: themeColors.text }]}>Welcome to Christ Pavilion!</Text>
+                <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>Live Ministry Updates</Text>
+                <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]}>
+                  We are delighted to welcome you to our official mobile app. Browse daily devotionals, stream teachings, and keep up with our branches and announcements!
+                </Text>
+              </View>
+
+              {upcomingEvents.length > 0 ? (
+                upcomingEvents.map((evt) => (
+                  <View 
+                    key={evt.eventId}
+                    style={[styles.announcementItem, { borderBottomColor: themeColors.border }]}
+                  >
+                    <View style={[styles.announcementBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                      <Text style={[styles.announcementBadgeText, { color: '#059669' }]}>Event</Text>
+                    </View>
+                    <Text style={[styles.announcementTitle, { color: themeColors.text }]}>{evt.title}</Text>
+                    <Text style={[styles.announcementDate, { color: themeColors.textSecondary }]}>
+                      Starts: {new Date(evt.startDate).toLocaleDateString()}
+                    </Text>
+                    <Text style={[styles.announcementDesc, { color: themeColors.textSecondary }]} numberOfLines={2}>
+                      {evt.description}
+                    </Text>
+                    <TouchableOpacity 
+                      style={styles.eventLink}
+                      onPress={() => {
+                        setAnnouncementsModalVisible(false);
+                        router.push('/events');
+                      }}
+                    >
+                      <Text style={{ color: themeColors.primary, fontWeight: 'bold', fontSize: 13 }}>View Details</Text>
+                      <ChevronRight size={14} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              ) : null}
+            </>
           )}
         </ScrollView>
       </SwipeableModal>
@@ -957,11 +1058,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 8,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
   },
   tileIconContainer: {
     width: 48,
@@ -1158,6 +1254,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingVertical: 16,
   },
+  announcementBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  announcementBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   announcementTitle: {
     fontSize: 15,
     fontWeight: 'bold',
@@ -1165,6 +1273,13 @@ const styles = StyleSheet.create({
   },
   announcementDate: {
     fontSize: 11,
+    marginBottom: 8,
+  },
+  announcementImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: 12,
+    marginTop: 8,
     marginBottom: 8,
   },
   announcementDesc: {
