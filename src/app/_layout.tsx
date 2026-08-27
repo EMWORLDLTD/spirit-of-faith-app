@@ -13,6 +13,7 @@ import { Home, Music, BookOpen, Calendar, MapPin, MoreHorizontal, Library } from
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { registerForPushNotificationsAsync } from '../services/notificationService';
+import { analyticsService } from '../services/analyticsService';
 import { apiService } from '../services/api';
 
 export default function RootLayout() {
@@ -34,9 +35,9 @@ function AppContent() {
   const router = useRouter();
   const lastBackPress = useRef<number>(0);
 
-  // Initialize push notifications and handle deep-linking on notification tap
+  // Initialize push notifications and analytics on launch
   useEffect(() => {
-    // 1. Register for push notifications on device launch
+    analyticsService.trackAppOpen();
     registerForPushNotificationsAsync();
 
     // 2. Handle notification tap when app is in background or closed
@@ -79,6 +80,10 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    if (pathname) {
+      analyticsService.logScreenView(pathname);
+    }
+
     if (Platform.OS !== 'android') return;
 
     const onBackPress = () => {

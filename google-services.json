@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "26544297387",
+    "project_id": "spirit-of-faith-app",
+    "storage_bucket": "spirit-of-faith-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:26544297387:android:a522b98d79306531e36eee",
+        "android_client_info": {
+          "package_name": "com.spiritoffaith.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtF03AKXkiFR4YAkIE80QHoUUyPdI5Qlw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
