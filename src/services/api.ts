@@ -523,17 +523,41 @@ export const apiService = {
         }
       }
 
+      // Extract series keywords for smart grouping and relevance scoring
+      const seriesTitleStr = String(seriesData.name || seriesData.seriesName || '').toLowerCase();
+      const seriesKeywords = seriesTitleStr
+        .replace(/[^a-z0-9\s]/gi, ' ')
+        .split(/\s+/)
+        .filter((w: string) => w.length > 2 && !['part', 'vol', 'volume', 'the', 'and', 'for', 'with', 'from'].includes(w));
+
+      const getRelevanceScore = (title: string) => {
+        if (!seriesKeywords.length || !title) return 1;
+        const lowerTitle = title.toLowerCase();
+        let matches = 0;
+        for (const kw of seriesKeywords) {
+          if (lowerTitle.includes(kw)) matches++;
+        }
+        return matches;
+      };
+
       // Sort series messages in chronological / sequential track order (Track 1, Track 2, Track 3...)
       uniqueMessages.sort((a, b) => {
+        // 1. Group native series tracks ahead of accidental foreign tracks
+        const scoreA = getRelevanceScore(a.title);
+        const scoreB = getRelevanceScore(b.title);
+        if (scoreA !== scoreB && (scoreA === 0 || scoreB === 0)) {
+          return scoreB - scoreA;
+        }
+
         const trackA = extractTrackNumber(a.title, a.rawObj);
         const trackB = extractTrackNumber(b.title, b.rawObj);
 
-        // If both have extracted track/part numbers, sort by track number ascending
+        // 2. If both have extracted track/part numbers, sort by track number ascending
         if (trackA !== null && trackB !== null && trackA !== trackB) {
           return trackA - trackB;
         }
 
-        // If only one has a track number
+        // 3. If only one has a track number
         if (trackA !== null && trackB === null) {
           return -1;
         }
@@ -541,14 +565,14 @@ export const apiService = {
           return 1;
         }
 
-        // Otherwise sort by publishedDate / messageDate / createdAt ascending (oldest/earliest first)
+        // 4. Otherwise sort by publishedDate / messageDate / createdAt ascending (oldest/earliest first)
         const dateA = a.publishedDate ? new Date(a.publishedDate).getTime() : 0;
         const dateB = b.publishedDate ? new Date(b.publishedDate).getTime() : 0;
         if (dateA !== dateB && !isNaN(dateA) && !isNaN(dateB) && dateA > 0 && dateB > 0) {
           return dateA - dateB;
         }
 
-        // Fallback: sort by messageId ascending
+        // 5. Fallback: sort by messageId ascending
         const idA = Number(a.messageId);
         const idB = Number(b.messageId);
         if (!isNaN(idA) && !isNaN(idB) && idA !== idB) {
@@ -558,12 +582,12 @@ export const apiService = {
         return String(a.messageId).localeCompare(String(b.messageId));
       });
 
+      // Guarantee clean, unique, sequential 1-based indexing for all tracks (1, 2, 3, 4...)
       const messagesWithTrackNum = uniqueMessages.map((m, idx) => {
-        const parsed = extractTrackNumber(m.title, m.rawObj);
         const { rawObj, ...cleanMsg } = m;
         return {
           ...cleanMsg,
-          originalTrackNumber: parsed || idx + 1,
+          originalTrackNumber: idx + 1,
         };
       });
 

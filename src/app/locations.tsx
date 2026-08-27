@@ -153,11 +153,6 @@ export default function LocationsScreen() {
               { 
                 backgroundColor: activeScheme === 'dark' ? 'rgba(15, 23, 42, 0.55)' : '#ffffff', 
                 borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: activeScheme === 'dark' ? 0.15 : 0.04,
-                shadowRadius: 8,
-                elevation: 2,
               }
             ]}
           >
@@ -244,11 +239,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   branchName: {
     fontSize: 18,

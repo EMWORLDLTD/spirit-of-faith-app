@@ -418,30 +418,44 @@ export default function TeachingsScreen() {
     <LinearGradient colors={bgColors} style={styles.container}>
       <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
       {selectedSeries && (
-        /* Transparent Header Wrapper for Series Details */
-        <View style={{ 
-          paddingTop: insets.top,
-          height: 56 + insets.top,
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 10,
-        }}>
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedSeries(null);
-              setSeriesMessages([]);
-            }}
-            style={{ flexDirection: 'row', alignItems: 'center', padding: 8 }}
-          >
-            <ChevronLeft size={24} color={themeColors.text} />
-            <Text style={{ color: themeColors.text, fontWeight: '600', marginLeft: 4, fontSize: 16 }}>Back</Text>
-          </TouchableOpacity>
-        </View>
+        /* Glassmorphic Header for Series Details */
+        <BlurHeader isDark={activeScheme === 'dark'}>
+          <View style={{
+            height: 56,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+          }}>
+            <TouchableOpacity
+              onPress={() => {
+                setSelectedSeries(null);
+                setSeriesMessages([]);
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingRight: 12 }}
+              activeOpacity={0.7}
+            >
+              <ChevronLeft size={24} color={themeColors.text} />
+              <Text style={{ color: themeColors.text, fontWeight: '600', marginLeft: 4, fontSize: 16 }}>Back</Text>
+            </TouchableOpacity>
+
+            <Text 
+              style={{ 
+                flex: 1, 
+                textAlign: 'center', 
+                fontSize: 16, 
+                fontWeight: '700', 
+                color: themeColors.text,
+                paddingHorizontal: 8,
+              }} 
+              numberOfLines={1}
+            >
+              {selectedSeries.seriesName}
+            </Text>
+
+            <View style={{ width: 60 }} />
+          </View>
+        </BlurHeader>
       )}
 
       {selectedSeries ? (
@@ -450,20 +464,17 @@ export default function TeachingsScreen() {
           contentContainerStyle={[
             styles.scrollContent, 
             { 
-              paddingTop: Platform.OS === 'android' ? 56 + insets.top + 24 : 0, 
+              paddingTop: 56 + insets.top + 16, 
               paddingBottom: 150 + insets.bottom 
             }
           ]} 
           showsVerticalScrollIndicator={false}
-          contentInset={Platform.OS === 'ios' ? { top: 56 + insets.top + 24 } : undefined}
-          contentOffset={Platform.OS === 'ios' ? { y: -(56 + insets.top + 24), x: 0 } : undefined}
-          automaticallyAdjustContentInsets={false}
           refreshControl={
             <RefreshControl 
               refreshing={refreshing} 
               onRefresh={onRefresh} 
               tintColor={themeColors.primary} 
-              progressViewOffset={Platform.OS === 'android' ? 56 + insets.top + 24 : undefined}
+              progressViewOffset={56 + insets.top + 16}
             />
           }
         >
@@ -560,8 +571,8 @@ export default function TeachingsScreen() {
                         >
                           {msg.title}
                         </Text>
-                        <Text style={[styles.trackMetaText, { color: themeColors.textSecondary }]}>
-                          {msg.speaker} {msg.duration ? `• ${msg.duration}` : ''}
+                        <Text style={[styles.trackMetaText, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                          {`Track ${msg.originalTrackNumber || (index + 1)} • ${msg.speaker || 'Christ Pavilion'}`}{msg.duration ? ` • ${msg.duration}` : ''}
                         </Text>
                       </View>
                     </TouchableOpacity>

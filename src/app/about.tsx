@@ -24,8 +24,7 @@ import {
   Mail, 
   Globe, 
   Clock, 
-  Award,
-  BookOpen,
+  BookOpen, 
   Quote
 } from 'lucide-react-native';
 
@@ -83,14 +82,19 @@ export default function AboutScreen() {
         >
           {/* Brand/Branding Section */}
           <View style={styles.logoContainer}>
-            <LinearGradient
-              colors={activeScheme === 'dark' ? ['#1b54a4', '#0d3275'] : ['#2563eb', '#1d4ed8']}
-              style={styles.logoIconCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Award size={40} color="#ffffff" />
-            </LinearGradient>
+            <View style={[
+              styles.logoIconCircle,
+              {
+                backgroundColor: activeScheme === 'dark' ? 'rgba(15, 23, 42, 0.55)' : '#ffffff',
+                borderColor: activeScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0',
+              }
+            ]}>
+              <Image
+                source={require('../../assets/images/app-icon.png')}
+                style={styles.logoImage}
+                resizeMode="cover"
+              />
+            </View>
             <Text style={[styles.appName, { color: themeColors.text }]}>Christ Pavilion</Text>
             <Text style={[styles.appSubtitle, { color: themeColors.primary }]}>Spirit of Faith Church</Text>
           </View>
@@ -270,17 +274,18 @@ const styles = StyleSheet.create({
     marginVertical: 24,
   },
   logoIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   appName: {
     fontSize: 20,
@@ -297,11 +302,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 20,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
   },
   cardHeader: {
     flexDirection: 'row',
