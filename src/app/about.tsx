@@ -91,8 +91,8 @@ export default function AboutScreen() {
             >
               <Award size={40} color="#ffffff" />
             </LinearGradient>
-            <Text style={[styles.appName, { color: themeColors.text }]}>Spirit of Faith Church</Text>
-            <Text style={[styles.appSubtitle, { color: themeColors.primary }]}>Christ Pavilion Media</Text>
+            <Text style={[styles.appName, { color: themeColors.text }]}>Christ Pavilion</Text>
+            <Text style={[styles.appSubtitle, { color: themeColors.primary }]}>Spirit of Faith Church</Text>
           </View>
 
           {/* 1. Welcome to Our Church Card */}
