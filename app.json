@@ -28,7 +28,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Christ Pavilion",
+      "shortName": "Christ Pavilion",
+      "description": "Official Christ Pavilion App - Audio Teachings, Devotionals & Events",
+      "backgroundColor": "#FFFFFF",
+      "themeColor": "#1B54A4",
+      "display": "standalone",
+      "startUrl": "/"
     },
     "plugins": [
       "expo-router",

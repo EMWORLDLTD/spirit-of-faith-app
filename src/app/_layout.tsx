@@ -7,6 +7,7 @@ import { Colors } from '../constants/theme';
 import { AudioProvider, useAudio } from '../contexts/AudioContext';
 import { AlertProvider } from '../contexts/AlertContext';
 import AudioPlayer from '../components/AudioPlayer';
+import IosPwaInstallPrompt from '../components/IosPwaInstallPrompt';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Home, Music, BookOpen, Calendar, MapPin, MoreHorizontal, Library } from 'lucide-react-native';
@@ -323,6 +324,9 @@ function AppContent() {
 
       {/* Global floating Audio Player & Action Sheet */}
       <AudioPlayer />
+
+      {/* iOS Safari PWA Install Banner */}
+      <IosPwaInstallPrompt />
     </View>
   );
 }

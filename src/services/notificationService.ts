@@ -78,6 +78,19 @@ export async function setupAndroidNotificationChannels() {
   });
 }
 
+export const VAPID_PUBLIC_KEY = 'BNA_Ejl85UzP3dUUTtHa-L5UT6siWqtt-p3oBM-4nHFQ5jEIAsMzI8NW7pnkZM0RxX5j-CHSk52H1XmFiODeaHY';
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = typeof window !== 'undefined' ? window.atob(base64) : '';
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export type PushRegistrationResult = {
   success: boolean;
   permissionGranted: boolean;
@@ -87,12 +100,77 @@ export type PushRegistrationResult = {
 };
 
 /**
- * Register device for Push Notifications & retrieve Expo Push Token
+ * Register device for Push Notifications & retrieve Expo Push Token / Web Push Subscription
  */
 export async function registerForPushNotificationsAsync(
   workerUrl: string = DEFAULT_NOTIFICATION_WORKER_URL
 ): Promise<PushRegistrationResult> {
   try {
+    // 0. Handle Web / iOS PWA Platform
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+            return {
+              success: false,
+              permissionGranted: false,
+              token: null,
+              isExpoGo: false,
+              error: 'permission_denied',
+            };
+          }
+
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          await navigator.serviceWorker.ready;
+
+          let subscription = await registration.pushManager.getSubscription();
+          if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+            });
+          }
+
+          const subJson = subscription.toJSON();
+          const token = subscription.endpoint;
+
+          await AsyncStorage.setItem(NOTIF_STORAGE_KEYS.PUSH_TOKEN, token);
+          await AsyncStorage.setItem(NOTIF_STORAGE_KEYS.TEACHING_NOTIFICATIONS_ENABLED, 'true');
+
+          // Send subscription to Cloudflare Worker
+          const cleanUrl = workerUrl.replace(/\/+$/, '');
+          await fetch(`${cleanUrl}/api/register-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token,
+              platform: 'ios_pwa',
+              subscription: subJson,
+              deviceModel: typeof navigator !== 'undefined' && navigator.userAgent.includes('iPhone') ? 'Apple iPhone PWA' : 'Web Browser PWA',
+              appVersion: '1.0.0',
+            }),
+          });
+
+          return {
+            success: true,
+            permissionGranted: true,
+            token,
+            isExpoGo: false,
+          };
+        } catch (webErr: any) {
+          console.warn('Web push subscription failed:', webErr);
+          return {
+            success: false,
+            permissionGranted: false,
+            token: null,
+            isExpoGo: false,
+            error: webErr.message,
+          };
+        }
+      }
+    }
+
     await setupAndroidNotificationChannels();
 
     // 1. Verify system notification permissions
