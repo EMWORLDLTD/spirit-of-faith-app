@@ -1,4 +1,4 @@
-const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
+const { withAndroidManifest, withDangerousMod, withAppBuildGradle } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -241,6 +241,17 @@ function withAndroidBigPictureNotification(config) {
       });
     }
 
+    return cfg;
+  });
+
+  // 3. Inject Firebase Messaging & AndroidX dependencies into app/build.gradle
+  config = withAppBuildGradle(config, (cfg) => {
+    if (!cfg.modResults.contents.includes('firebase-messaging')) {
+      cfg.modResults.contents = cfg.modResults.contents.replace(
+        /dependencies\s*\{/,
+        `dependencies {\n    implementation 'com.google.firebase:firebase-messaging:24.0.0'\n    implementation 'androidx.core:core:1.13.1'`
+      );
+    }
     return cfg;
   });
 
