@@ -65,7 +65,8 @@
           "color": "#1B54A4",
           "sounds": []
         }
-      ]
+      ],
+      "./plugins/withAndroidBigPictureNotification"
     ],
     "experiments": {
       "typedRoutes": true,

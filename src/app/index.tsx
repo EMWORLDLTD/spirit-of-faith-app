@@ -1277,10 +1277,11 @@ const styles = StyleSheet.create({
   },
   announcementImage: {
     width: '100%',
-    height: 140,
-    borderRadius: 12,
-    marginTop: 8,
-    marginBottom: 8,
+    aspectRatio: 16 / 9,
+    borderRadius: 14,
+    marginTop: 10,
+    marginBottom: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.05)',
   },
   announcementDesc: {
     fontSize: 13,
