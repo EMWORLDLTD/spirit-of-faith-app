@@ -57,11 +57,33 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
 
         if (data != null && !data.isEmpty()) {
             if (data.containsKey("title") && data.get("title") != null) title = data.get("title");
-            if (data.containsKey("body") && data.get("body") != null) body = data.get("body");
-            if (data.containsKey("image") && data.get("image") != null) imageUrl = data.get("image");
-            else if (data.containsKey("imageUrl") && data.get("imageUrl") != null) imageUrl = data.get("imageUrl");
-            else if (data.containsKey("coverUrl") && data.get("coverUrl") != null) imageUrl = data.get("coverUrl");
+            
+            // Expo maps push 'body' to 'message' in FCM data payload
+            if (data.containsKey("message") && data.get("message") != null) body = data.get("message");
+            else if (data.containsKey("body") && data.get("body") != null && !data.get("body").startsWith("{")) {
+                body = data.get("body");
+            }
 
+            // Expo stringifies the custom 'data' object into the 'body' key
+            if (data.containsKey("body") && data.get("body") != null && data.get("body").startsWith("{")) {
+                try {
+                    org.json.JSONObject jsonObj = new org.json.JSONObject(data.get("body"));
+                    if (jsonObj.has("image") && !jsonObj.isNull("image")) imageUrl = jsonObj.getString("image");
+                    else if (jsonObj.has("imageUrl") && !jsonObj.isNull("imageUrl")) imageUrl = jsonObj.getString("imageUrl");
+                    else if (jsonObj.has("coverUrl") && !jsonObj.isNull("coverUrl")) imageUrl = jsonObj.getString("coverUrl");
+                    
+                    if (jsonObj.has("channelId") && !jsonObj.isNull("channelId")) channelId = jsonObj.getString("channelId");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to parse Expo data JSON", e);
+                }
+            }
+
+            // Standard flat FCM fields fallback
+            if (imageUrl == null) {
+                if (data.containsKey("image") && data.get("image") != null) imageUrl = data.get("image");
+                else if (data.containsKey("imageUrl") && data.get("imageUrl") != null) imageUrl = data.get("imageUrl");
+                else if (data.containsKey("coverUrl") && data.get("coverUrl") != null) imageUrl = data.get("coverUrl");
+            }
             if (data.containsKey("channelId") && data.get("channelId") != null) {
                 channelId = data.get("channelId");
             }
