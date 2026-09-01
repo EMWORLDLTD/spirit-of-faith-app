@@ -8,6 +8,8 @@ import { AudioProvider, useAudio } from '../contexts/AudioContext';
 import { AlertProvider } from '../contexts/AlertContext';
 import AudioPlayer from '../components/AudioPlayer';
 import IosPwaInstallPrompt from '../components/IosPwaInstallPrompt';
+import BroadcastModal from '../components/BroadcastModal';
+import { useBroadcast } from '../hooks/useBroadcast';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Home, Music, BookOpen, Calendar, MapPin, MoreHorizontal, Library } from 'lucide-react-native';
@@ -35,6 +37,9 @@ function AppContent() {
   const navigation = useNavigation();
   const router = useRouter();
   const lastBackPress = useRef<number>(0);
+
+  // Remote In-App Broadcast Pop-up
+  const { broadcast, isVisible, dismissBroadcast, actOnBroadcast } = useBroadcast();
 
   // Initialize push notifications and analytics on launch
   useEffect(() => {
@@ -327,6 +332,14 @@ function AppContent() {
 
       {/* iOS Safari PWA Install Banner */}
       <IosPwaInstallPrompt />
+
+      {/* Remote In-App Broadcast Pop-up — rendered last to sit above everything */}
+      <BroadcastModal
+        broadcast={broadcast}
+        isVisible={isVisible}
+        onDismiss={dismissBroadcast}
+        onAction={actOnBroadcast}
+      />
     </View>
   );
 }
