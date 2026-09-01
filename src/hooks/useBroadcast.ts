@@ -25,32 +25,6 @@ export function useBroadcast(): UseBroadcastResult {
   const [isVisible, setIsVisible] = useState(false);
 
   const checkForBroadcast = useCallback(async () => {
-    // ─── DEV TEST BROADCAST ────────────────────────────────────────────────
-    // This block only runs in development builds (Expo dev client / Metro).
-    // It is automatically stripped out in production builds.
-    // Remove or set to false once you've confirmed the modal works end-to-end.
-    if (__DEV__) {
-      const DEV_BROADCAST = {
-        id: 'dev-test-broadcast-001',
-        title: 'Annual Faith Convention 2026',
-        subtitle: 'Friday 5th September · 6:00 PM',
-        body: "Join us for 3 power-packed days of life-changing ministry. Invite a friend and come expectant.",
-        type: 'event' as const,
-        imageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80',
-        displayType: 'popup_modal' as const,
-        actionText: 'View Event Details',
-        actionRoute: '/events',
-        isDismissible: true,
-        showOnce: false, // set to false during dev so it always re-shows for testing
-        createdAt: new Date().toISOString(),
-        expiresAt: '2099-12-31T23:59:59Z',
-      };
-      setBroadcast(DEV_BROADCAST);
-      setIsVisible(true);
-      return; // skip real API call in dev
-    }
-    // ─── END DEV TEST BROADCAST ────────────────────────────────────────────
-
     try {
       const active = await announcementService.getActiveBroadcast();
       if (active) {

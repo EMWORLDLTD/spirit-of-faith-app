@@ -15,6 +15,8 @@ export interface AppAnnouncement {
   // --- Broadcast / Pop-up fields ---
   /** Controls how the announcement is displayed. 'inline' = announcements tab only (default). 'popup_modal' = full screen pop-up on app launch. */
   displayType?: 'inline' | 'popup_modal';
+  /** Style of the pop-up modal. 'card' = standard card with title/body/buttons. 'image_only' = full-bleed clickable flyer with floating close button. */
+  popupStyle?: 'card' | 'image_only';
   /** Label for the primary action button, e.g. "View Event Details", "Listen Now" */
   actionText?: string;
   /** Expo Router route to navigate to when action button is tapped, e.g. "/events", "/teachings" */

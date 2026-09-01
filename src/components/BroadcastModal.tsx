@@ -17,8 +17,9 @@ import { Colors } from '../constants/theme';
 import { useAudio } from '../contexts/AudioContext';
 import { AppAnnouncement } from '../services/announcementService';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const MODAL_WIDTH = Math.min(width - 48, 380);
+const FLYER_MAX_HEIGHT = Math.min(height * 0.72, 520);
 
 interface BroadcastModalProps {
   broadcast: AppAnnouncement | null;
@@ -89,6 +90,7 @@ export default function BroadcastModal({
 
   const canDismiss = broadcast.isDismissible !== false;
   const hasImage = !!broadcast.imageUrl;
+  const isImageOnly = broadcast.popupStyle === 'image_only' && hasImage;
 
   return (
     <Modal
@@ -117,13 +119,13 @@ export default function BroadcastModal({
           )}
         </EaseView>
 
-        {/* Modal Card */}
+        {/* Modal Card / Flyer */}
         <EaseView
           style={[
-            styles.card,
+            isImageOnly ? styles.flyerCard : styles.card,
             {
-              backgroundColor: isDark ? '#1A1D26' : '#FFFFFF',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(27,84,164,0.1)',
+              backgroundColor: isImageOnly ? '#000000' : (isDark ? '#1A1D26' : '#FFFFFF'),
+              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(27,84,164,0.12)',
             },
           ]}
           initialAnimate={{ opacity: 0, scale: 0.9, translateY: 16 }}
@@ -139,127 +141,173 @@ export default function BroadcastModal({
           }
           onTransitionEnd={handleTransitionEnd}
         >
-          {/* Image Header */}
-          {hasImage && (
-            <View style={styles.imageContainer}>
-              <Image
-                source={{ uri: broadcast.imageUrl }}
-                style={styles.bannerImage}
-                contentFit="cover"
-                transition={200}
-              />
-              {/* Gradient fade from image into card bg */}
-              <View
-                style={[
-                  styles.imageGradientFade,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(26, 29, 38, 0.35)'
-                      : 'rgba(255, 255, 255, 0.25)',
-                  },
-                ]}
-              />
-            </View>
-          )}
-
-          {/* Close Button (top-right, only if dismissible) */}
-          {canDismiss && (
-            <TouchableOpacity
-              style={[
-                styles.closeButton,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(255,255,255,0.1)'
-                    : 'rgba(0,0,0,0.07)',
-                  top: hasImage ? 12 : 16,
-                },
-              ]}
-              onPress={handleDismiss}
-              activeOpacity={0.75}
-            >
-              <X size={16} color={isDark ? '#FFFFFF' : '#1A1A2E'} strokeWidth={2.5} />
-            </TouchableOpacity>
-          )}
-
-          {/* Body Content */}
-          <View style={[styles.body, hasImage && styles.bodyWithImage]}>
-            {/* Icon badge — shown when no image */}
-            {!hasImage && (
-              <View
-                style={[
-                  styles.iconBadge,
-                  { backgroundColor: isDark ? 'rgba(27,84,164,0.18)' : 'rgba(27,84,164,0.08)' },
-                ]}
-              >
-                <Bell size={22} color={themeColors.primary} strokeWidth={1.8} />
-              </View>
-            )}
-
-            <Text
-              style={[
-                styles.title,
-                { color: themeColors.text },
-                !hasImage && styles.titleCentered,
-              ]}
-              numberOfLines={3}
-            >
-              {broadcast.title}
-            </Text>
-
-            {broadcast.subtitle ? (
-              <Text
-                style={[styles.subtitle, { color: themeColors.primary }]}
-                numberOfLines={2}
-              >
-                {broadcast.subtitle}
-              </Text>
-            ) : null}
-
-            <Text
-              style={[
-                styles.message,
-                { color: themeColors.textSecondary },
-                !hasImage && styles.messageCentered,
-              ]}
-            >
-              {broadcast.body}
-            </Text>
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.actions}>
-            {/* Primary action button */}
-            {broadcast.actionText && broadcast.actionRoute ? (
+          {isImageOnly ? (
+            /* ─────────────────────────────────────────────────────────────
+               IMAGE-ONLY FLYER LAYOUT
+               Entire poster is clickable + floating circular X dismiss button
+               ───────────────────────────────────────────────────────────── */
+            <View style={styles.flyerWrapper}>
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: themeColors.primary }]}
+                activeOpacity={0.92}
                 onPress={handleAction}
-                activeOpacity={0.8}
+                style={styles.flyerTouchable}
               >
-                <ExternalLink size={15} color="#FFFFFF" strokeWidth={2} />
-                <Text style={styles.actionBtnText}>{broadcast.actionText}</Text>
-              </TouchableOpacity>
-            ) : null}
+                <Image
+                  source={{ uri: broadcast.imageUrl }}
+                  style={styles.flyerImage}
+                  contentFit="cover"
+                  transition={200}
+                />
 
-            {/* Dismiss / Later button — only when isDismissible is not false */}
-            {canDismiss && (
-              <TouchableOpacity
-                style={[
-                  styles.dismissBtn,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(255,255,255,0.06)'
-                      : 'rgba(0,0,0,0.04)',
-                  },
-                ]}
-                onPress={handleDismiss}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.dismissBtnText, { color: themeColors.textSecondary }]}>
-                  {broadcast.actionText ? 'Later' : 'Dismiss'}
-                </Text>
+                {/* Floating pill badge at bottom if actionText exists */}
+                {broadcast.actionText ? (
+                  <View style={styles.flyerActionPill}>
+                    <Text style={styles.flyerActionText}>{broadcast.actionText}</Text>
+                    <ExternalLink size={13} color="#FFFFFF" strokeWidth={2.5} />
+                  </View>
+                ) : null}
               </TouchableOpacity>
-            )}
-          </View>
+
+              {/* Floating Close Button */}
+              {canDismiss && (
+                <TouchableOpacity
+                  style={styles.flyerCloseButton}
+                  onPress={handleDismiss}
+                  activeOpacity={0.8}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <X size={16} color="#FFFFFF" strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            /* ─────────────────────────────────────────────────────────────
+               STANDARD / TEXT CARD LAYOUT
+               ───────────────────────────────────────────────────────────── */
+            <>
+              {/* Image Header */}
+              {hasImage && (
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={{ uri: broadcast.imageUrl }}
+                    style={styles.bannerImage}
+                    contentFit="cover"
+                    transition={200}
+                  />
+                  {/* Gradient fade from image into card bg */}
+                  <View
+                    style={[
+                      styles.imageGradientFade,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(26, 29, 38, 0.35)'
+                          : 'rgba(255, 255, 255, 0.25)',
+                      },
+                    ]}
+                  />
+                </View>
+              )}
+
+              {/* Close Button (top-right, only if dismissible) */}
+              {canDismiss && (
+                <TouchableOpacity
+                  style={[
+                    styles.closeButton,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.1)'
+                        : 'rgba(0,0,0,0.07)',
+                      top: hasImage ? 12 : 16,
+                    },
+                  ]}
+                  onPress={handleDismiss}
+                  activeOpacity={0.75}
+                >
+                  <X size={16} color={isDark ? '#FFFFFF' : '#1A1A2E'} strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+
+              {/* Body Content */}
+              <View style={[styles.body, hasImage && styles.bodyWithImage]}>
+                {/* Icon badge — shown when no image */}
+                {!hasImage && (
+                  <View
+                    style={[
+                      styles.iconBadge,
+                      { backgroundColor: isDark ? 'rgba(27,84,164,0.18)' : 'rgba(27,84,164,0.08)' },
+                    ]}
+                  >
+                    <Bell size={22} color={themeColors.primary} strokeWidth={1.8} />
+                  </View>
+                )}
+
+                <Text
+                  style={[
+                    styles.title,
+                    { color: themeColors.text },
+                    !hasImage && styles.titleCentered,
+                  ]}
+                  numberOfLines={3}
+                >
+                  {broadcast.title}
+                </Text>
+
+                {broadcast.subtitle ? (
+                  <Text
+                    style={[styles.subtitle, { color: themeColors.primary }]}
+                    numberOfLines={2}
+                  >
+                    {broadcast.subtitle}
+                  </Text>
+                ) : null}
+
+                <Text
+                  style={[
+                    styles.message,
+                    { color: themeColors.textSecondary },
+                    !hasImage && styles.messageCentered,
+                  ]}
+                >
+                  {broadcast.body}
+                </Text>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.actions}>
+                {/* Primary action button */}
+                {broadcast.actionText && broadcast.actionRoute ? (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: themeColors.primary }]}
+                    onPress={handleAction}
+                    activeOpacity={0.8}
+                  >
+                    <ExternalLink size={15} color="#FFFFFF" strokeWidth={2} />
+                    <Text style={styles.actionBtnText}>{broadcast.actionText}</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {/* Dismiss / Later button — only when isDismissible is not false */}
+                {canDismiss && (
+                  <TouchableOpacity
+                    style={[
+                      styles.dismissBtn,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'rgba(0,0,0,0.04)',
+                      },
+                    ]}
+                    onPress={handleDismiss}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.dismissBtnText, { color: themeColors.textSecondary }]}>
+                      {broadcast.actionText ? 'Later' : 'Dismiss'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
+          )}
         </EaseView>
       </View>
     </Modal>
@@ -275,7 +323,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   card: {
     width: MODAL_WIDTH,
@@ -287,6 +335,73 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 28,
     elevation: 28,
+  },
+  flyerCard: {
+    width: MODAL_WIDTH,
+    maxHeight: FLYER_MAX_HEIGHT,
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.38,
+    shadowRadius: 30,
+    elevation: 32,
+  },
+  flyerWrapper: {
+    width: '100%',
+    position: 'relative',
+  },
+  flyerTouchable: {
+    width: '100%',
+    aspectRatio: 4 / 5,
+    maxHeight: FLYER_MAX_HEIGHT,
+    position: 'relative',
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  flyerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  flyerCloseButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  flyerActionPill: {
+    position: 'absolute',
+    bottom: 14,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  flyerActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
   imageContainer: {
     width: '100%',
