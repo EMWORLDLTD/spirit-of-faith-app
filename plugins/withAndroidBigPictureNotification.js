@@ -310,14 +310,15 @@ function withAndroidBigPictureNotification(config) {
       mainApplication.service = [];
     }
 
+    const FULL_SERVICE_NAME = `com.spiritoffaith.app.${SERVICE_NAME}`;
     const serviceExists = mainApplication.service.some(
-      (s) => s.$?.['android:name'] === `.${SERVICE_NAME}`
+      (s) => s.$?.['android:name'] === `.${SERVICE_NAME}` || s.$?.['android:name'] === FULL_SERVICE_NAME
     );
 
     if (!serviceExists) {
       mainApplication.service.push({
         $: {
-          'android:name': `.${SERVICE_NAME}`,
+          'android:name': FULL_SERVICE_NAME,
           'android:exported': 'false',
         },
         'intent-filter': [

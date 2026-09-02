@@ -23,6 +23,44 @@
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:26544297387:android:7e4d64880ff7c31be36eee",
+        "android_client_info": {
+          "package_name": "com.spiritoffaith.app.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtF03AKXkiFR4YAkIE80QHoUUyPdI5Qlw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:26544297387:android:f0efdda97e8b037be36eee",
+        "android_client_info": {
+          "package_name": "com.spiritoffaith.app.preview"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtF03AKXkiFR4YAkIE80QHoUUyPdI5Qlw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"
