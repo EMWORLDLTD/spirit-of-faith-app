@@ -48,7 +48,7 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
         String imageUrl = null;
         String channelId = DEFAULT_CHANNEL_ID;
 
-        Log.d(TAG, "onMessageReceived: data keys=" + (data != null ? data.keySet() : "null")
+        Log.d(TAG, "onMessageReceived: data payload=" + (data != null ? data.toString() : "null")
                 + ", hasNotification=" + (notification != null));
 
         if (notification != null) {
