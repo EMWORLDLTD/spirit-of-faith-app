@@ -304,26 +304,36 @@ export default function DevotionalsScreen() {
     // Deduplicate fileNames
     const uniqueFileNames = Array.from(new Set(fileNames));
 
-    for (const bucket of BUCKET_NAMES) {
-      const encodedBucket = encodeURIComponent(bucket);
-      for (const fileName of uniqueFileNames) {
-        candidateUrls.push(`${SUPABASE_PROJECT_BASE}/${encodedBucket}/${fileName}`);
-      }
+    // 'Cp devotional' is the primary active bucket
+    const PRIMARY_BUCKET = encodeURIComponent('Cp devotional');
+    for (const fileName of uniqueFileNames) {
+      candidateUrls.push(`${SUPABASE_PROJECT_BASE}/${PRIMARY_BUCKET}/${fileName}`);
     }
 
     setAudioCheckingId(dev.devotionalId);
     let validAudioUri: string | null = null;
 
-    for (const url of candidateUrls) {
+    // Fast parallel check with 1500ms timeout per request
+    const checkUrl = async (url: string): Promise<string> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
       try {
-        const res = await fetch(url, { method: 'HEAD' });
+        const res = await fetch(url, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
         if (res.ok && res.status >= 200 && res.status < 300) {
-          validAudioUri = url;
-          break;
+          return url;
         }
-      } catch (err) {
-        console.warn('Audio check error for url:', url, err);
+        throw new Error('Not found');
+      } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
       }
+    };
+
+    try {
+      validAudioUri = await Promise.any(candidateUrls.map(checkUrl));
+    } catch {
+      validAudioUri = null;
     }
 
     setAudioCheckingId(null);
