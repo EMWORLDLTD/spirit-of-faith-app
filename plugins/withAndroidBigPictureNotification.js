@@ -69,22 +69,30 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
                 body = data.get("body");
             }
 
-            // Expo stringifies the custom 'data' object into the 'body' key
-            if (data.containsKey("body") && data.get("body") != null && data.get("body").startsWith("{")) {
-                try {
-                    org.json.JSONObject jsonObj = new org.json.JSONObject(data.get("body"));
-                    Log.d(TAG, "Parsed Expo data.body JSON, keys: " + jsonObj.keys());
-                    if (jsonObj.has("image") && !jsonObj.isNull("image") && jsonObj.getString("image").length() > 0) {
-                        imageUrl = jsonObj.getString("image");
-                    } else if (jsonObj.has("imageUrl") && !jsonObj.isNull("imageUrl") && jsonObj.getString("imageUrl").length() > 0) {
-                        imageUrl = jsonObj.getString("imageUrl");
-                    } else if (jsonObj.has("coverUrl") && !jsonObj.isNull("coverUrl") && jsonObj.getString("coverUrl").length() > 0) {
-                        imageUrl = jsonObj.getString("coverUrl");
+            }
+            
+            // Search all keys in the intent data for JSON objects and parse them aggressively
+            for (String key : data.keySet()) {
+                String val = data.get(key);
+                if (val != null && val.startsWith("{")) {
+                    try {
+                        org.json.JSONObject jsonObj = new org.json.JSONObject(val);
+                        Log.d(TAG, "Aggressive parse: Found JSON in key '" + key + "' -> keys: " + jsonObj.keys());
+                        if ((imageUrl == null || imageUrl.isEmpty()) && jsonObj.has("image") && !jsonObj.isNull("image") && jsonObj.getString("image").length() > 0) {
+                            imageUrl = jsonObj.getString("image");
+                        }
+                        if ((imageUrl == null || imageUrl.isEmpty()) && jsonObj.has("imageUrl") && !jsonObj.isNull("imageUrl") && jsonObj.getString("imageUrl").length() > 0) {
+                            imageUrl = jsonObj.getString("imageUrl");
+                        }
+                        if ((imageUrl == null || imageUrl.isEmpty()) && jsonObj.has("coverUrl") && !jsonObj.isNull("coverUrl") && jsonObj.getString("coverUrl").length() > 0) {
+                            imageUrl = jsonObj.getString("coverUrl");
+                        }
+                        if (jsonObj.has("channelId") && !jsonObj.isNull("channelId") && (channelId == null || channelId.equals(DEFAULT_CHANNEL_ID))) {
+                            channelId = jsonObj.getString("channelId");
+                        }
+                    } catch (Exception e) {
+                        // ignore parsing errors on non-json structures
                     }
-                    
-                    if (jsonObj.has("channelId") && !jsonObj.isNull("channelId")) channelId = jsonObj.getString("channelId");
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to parse Expo data JSON", e);
                 }
             }
 
@@ -98,7 +106,7 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
                     imageUrl = data.get("coverUrl");
                 }
             }
-            if (data.containsKey("channelId") && data.get("channelId") != null) {
+            if (data.containsKey("channelId") && data.get("channelId") != null && (channelId == null || channelId.equals(DEFAULT_CHANNEL_ID))) {
                 channelId = data.get("channelId");
             }
         }
