@@ -27,6 +27,7 @@ export function useBroadcast(): UseBroadcastResult {
   const checkForBroadcast = useCallback(async () => {
     try {
       const active = await announcementService.getActiveBroadcast();
+      console.log('useBroadcast check result:', active ? active.id : 'null');
       if (active) {
         setBroadcast(active);
         setIsVisible(true);

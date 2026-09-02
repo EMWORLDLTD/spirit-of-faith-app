@@ -92,6 +92,14 @@ export default function BroadcastModal({
   const hasImage = !!broadcast.imageUrl;
   const isImageOnly = broadcast.popupStyle === 'image_only' && hasImage;
 
+  console.log('Rendering BroadcastModal ->', { 
+    id: broadcast.id, 
+    popupStyle: broadcast.popupStyle, 
+    hasImage, 
+    isImageOnly,
+    title: broadcast.title
+  });
+
   return (
     <Modal
       animationType="none"

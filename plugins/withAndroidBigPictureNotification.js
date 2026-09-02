@@ -263,10 +263,12 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
             builder.setStyle(new NotificationCompat.BigTextStyle().bigText(body));
         }
 
-        int notificationId = (int) (System.currentTimeMillis() & 0xfffffff);
+        int notificationId = (int) (System.currentTimeMillis() % 100000);
+        if (notificationId < 0) notificationId *= -1;
+        
         NotificationManagerCompat notificationManagerCompat = NotificationManagerCompat.from(context);
         try {
-            notificationManagerCompat.notify((int) System.currentTimeMillis(), builder.build());
+            notificationManagerCompat.notify(notificationId, builder.build());
         } catch (SecurityException e) {
             Log.e(TAG, "Notification permission missing: " + e.getMessage());
         }
