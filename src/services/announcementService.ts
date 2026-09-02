@@ -77,34 +77,65 @@ export const announcementService = {
    */
   async getActiveBroadcast(): Promise<AppAnnouncement | null> {
     try {
-      const all = await this.getAnnouncements();
-      const now = new Date();
+      let broadcast: AppAnnouncement | null = null;
 
-      const broadcasts = all.filter((a) => a.displayType === 'popup_modal');
-
-      for (const broadcast of broadcasts) {
-        // Skip expired broadcasts
-        if (broadcast.expiresAt && new Date(broadcast.expiresAt) < now) {
-          continue;
-        }
-
-        // Skip if already dismissed (showOnce)
-        if (broadcast.showOnce) {
-          const dismissedKey = `${DISMISSED_BROADCAST_PREFIX}${broadcast.id}`;
-          const dismissed = await AsyncStorage.getItem(dismissedKey);
-          if (dismissed === 'true') {
-            continue;
+      // 1. Dedicated endpoint for active launch pop-up modal
+      try {
+        const response = await fetch(`${DEFAULT_NOTIFICATION_WORKER_URL}/api/broadcasts/active`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.broadcast) {
+            broadcast = data.broadcast;
           }
         }
-
-        // Return the first valid broadcast
-        return broadcast;
+      } catch (e) {
+        console.log('Error fetching /api/broadcasts/active, checking fallback:', e);
       }
+
+      // 2. Fallback: fetch with all=true
+      if (!broadcast) {
+        try {
+          const response = await fetch(`${DEFAULT_NOTIFICATION_WORKER_URL}/api/announcements?all=true`, {
+            headers: { Accept: 'application/json' },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data && Array.isArray(data.announcements)) {
+              broadcast = data.announcements.find((a: AppAnnouncement) => a.displayType === 'popup_modal') || null;
+            }
+          }
+        } catch {}
+      }
+
+      if (!broadcast) return null;
+
+      const now = new Date();
+      // Skip expired broadcasts
+      if (broadcast.expiresAt && new Date(broadcast.expiresAt) < now) {
+        return null;
+      }
+
+      // Skip future scheduled broadcasts
+      if (broadcast.publishAt && new Date(broadcast.publishAt) > now) {
+        return null;
+      }
+
+      // Skip if already dismissed (showOnce)
+      if (broadcast.showOnce) {
+        const dismissedKey = `${DISMISSED_BROADCAST_PREFIX}${broadcast.id}`;
+        const dismissed = await AsyncStorage.getItem(dismissedKey);
+        if (dismissed === 'true') {
+          return null;
+        }
+      }
+
+      return broadcast;
     } catch (err) {
       console.warn('Error fetching active broadcast:', err);
+      return null;
     }
-
-    return null;
   },
 
   /**
