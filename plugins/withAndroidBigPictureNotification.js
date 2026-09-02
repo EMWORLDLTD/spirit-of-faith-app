@@ -34,6 +34,7 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
     private static final String TAG = "ChristPavilionNotif";
     private static final String DEFAULT_CHANNEL_ID = "devotionals";
     private static final String DEFAULT_CHANNEL_NAME = "Daily Devotionals";
+    private static final int MAX_REDIRECTS = 5;
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
@@ -47,11 +48,15 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
         String imageUrl = null;
         String channelId = DEFAULT_CHANNEL_ID;
 
+        Log.d(TAG, "onMessageReceived: data keys=" + (data != null ? data.keySet() : "null")
+                + ", hasNotification=" + (notification != null));
+
         if (notification != null) {
             title = notification.getTitle();
             body = notification.getBody();
             if (notification.getImageUrl() != null) {
                 imageUrl = notification.getImageUrl().toString();
+                Log.d(TAG, "Image from notification block: " + imageUrl);
             }
         }
 
@@ -68,9 +73,14 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
             if (data.containsKey("body") && data.get("body") != null && data.get("body").startsWith("{")) {
                 try {
                     org.json.JSONObject jsonObj = new org.json.JSONObject(data.get("body"));
-                    if (jsonObj.has("image") && !jsonObj.isNull("image")) imageUrl = jsonObj.getString("image");
-                    else if (jsonObj.has("imageUrl") && !jsonObj.isNull("imageUrl")) imageUrl = jsonObj.getString("imageUrl");
-                    else if (jsonObj.has("coverUrl") && !jsonObj.isNull("coverUrl")) imageUrl = jsonObj.getString("coverUrl");
+                    Log.d(TAG, "Parsed Expo data.body JSON, keys: " + jsonObj.keys());
+                    if (jsonObj.has("image") && !jsonObj.isNull("image") && jsonObj.getString("image").length() > 0) {
+                        imageUrl = jsonObj.getString("image");
+                    } else if (jsonObj.has("imageUrl") && !jsonObj.isNull("imageUrl") && jsonObj.getString("imageUrl").length() > 0) {
+                        imageUrl = jsonObj.getString("imageUrl");
+                    } else if (jsonObj.has("coverUrl") && !jsonObj.isNull("coverUrl") && jsonObj.getString("coverUrl").length() > 0) {
+                        imageUrl = jsonObj.getString("coverUrl");
+                    }
                     
                     if (jsonObj.has("channelId") && !jsonObj.isNull("channelId")) channelId = jsonObj.getString("channelId");
                 } catch (Exception e) {
@@ -78,11 +88,15 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
                 }
             }
 
-            // Standard flat FCM fields fallback
-            if (imageUrl == null) {
-                if (data.containsKey("image") && data.get("image") != null) imageUrl = data.get("image");
-                else if (data.containsKey("imageUrl") && data.get("imageUrl") != null) imageUrl = data.get("imageUrl");
-                else if (data.containsKey("coverUrl") && data.get("coverUrl") != null) imageUrl = data.get("coverUrl");
+            // Flat FCM data fields fallback — check if imageUrl is still missing or empty
+            if (imageUrl == null || imageUrl.trim().isEmpty()) {
+                if (data.containsKey("image") && data.get("image") != null && !data.get("image").trim().isEmpty()) {
+                    imageUrl = data.get("image");
+                } else if (data.containsKey("imageUrl") && data.get("imageUrl") != null && !data.get("imageUrl").trim().isEmpty()) {
+                    imageUrl = data.get("imageUrl");
+                } else if (data.containsKey("coverUrl") && data.get("coverUrl") != null && !data.get("coverUrl").trim().isEmpty()) {
+                    imageUrl = data.get("coverUrl");
+                }
             }
             if (data.containsKey("channelId") && data.get("channelId") != null) {
                 channelId = data.get("channelId");
@@ -90,30 +104,83 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
         }
 
         if (title == null && body == null) {
+            Log.w(TAG, "Both title and body are null, skipping notification");
             return;
         }
+
+        Log.d(TAG, "Resolved imageUrl=" + imageUrl + ", channelId=" + channelId);
 
         Bitmap bitmap = null;
         if (imageUrl != null && !imageUrl.trim().isEmpty()) {
             bitmap = downloadBitmap(imageUrl.trim());
+            Log.d(TAG, "downloadBitmap result: " + (bitmap != null ? bitmap.getWidth() + "x" + bitmap.getHeight() : "null"));
         }
 
         showRichNotification(title, body, bitmap, channelId, data);
     }
 
     private Bitmap downloadBitmap(String src) {
+        HttpURLConnection connection = null;
+        InputStream input = null;
+        String currentUrl = src;
+
         try {
-            URL url = new URL(src);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setDoInput(true);
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(12000);
-            connection.connect();
-            InputStream input = connection.getInputStream();
-            return BitmapFactory.decodeStream(input);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to download notification image: " + e.getMessage());
+            for (int redirects = 0; redirects < MAX_REDIRECTS; redirects++) {
+                URL url = new URL(currentUrl);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setDoInput(true);
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(12000);
+                connection.setInstanceFollowRedirects(true);
+                connection.setRequestProperty("User-Agent", "SpiritOfFaithApp/1.0 (Android)");
+                connection.setRequestProperty("Accept", "image/*");
+                connection.connect();
+
+                int responseCode = connection.getResponseCode();
+                Log.d(TAG, "Image download HTTP " + responseCode + " from: " + currentUrl);
+
+                if (responseCode == HttpURLConnection.HTTP_MOVED_PERM
+                        || responseCode == HttpURLConnection.HTTP_MOVED_TEMP
+                        || responseCode == HttpURLConnection.HTTP_SEE_OTHER
+                        || responseCode == 307 || responseCode == 308) {
+                    // Manual redirect — needed for cross-protocol HTTP->HTTPS redirects
+                    String redirectUrl = connection.getHeaderField("Location");
+                    connection.disconnect();
+                    if (redirectUrl == null || redirectUrl.trim().isEmpty()) {
+                        Log.e(TAG, "Redirect response but no Location header");
+                        return null;
+                    }
+                    // Handle relative redirect URLs
+                    if (redirectUrl.startsWith("/")) {
+                        URL base = new URL(currentUrl);
+                        redirectUrl = base.getProtocol() + "://" + base.getHost() + redirectUrl;
+                    }
+                    currentUrl = redirectUrl;
+                    Log.d(TAG, "Following redirect to: " + currentUrl);
+                    continue;
+                }
+
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    Log.e(TAG, "Image download failed with HTTP " + responseCode);
+                    return null;
+                }
+
+                input = connection.getInputStream();
+                Bitmap bitmap = BitmapFactory.decodeStream(input);
+                if (bitmap == null) {
+                    Log.e(TAG, "BitmapFactory.decodeStream returned null for: " + currentUrl);
+                }
+                return bitmap;
+            }
+
+            Log.e(TAG, "Too many redirects downloading image: " + src);
             return null;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to download notification image: " + e.getMessage(), e);
+            return null;
+        } finally {
+            try { if (input != null) input.close(); } catch (Exception ignored) {}
+            if (connection != null) connection.disconnect();
         }
     }
 
@@ -179,7 +246,7 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
                 .setContentIntent(pendingIntent);
 
         if (bitmap != null) {
-            // Apply native Android BigPictureStyle for full expandable Instagram/PalmPay banner
+            // Apply native Android BigPictureStyle for full expandable banner
             NotificationCompat.BigPictureStyle bigPictureStyle = new NotificationCompat.BigPictureStyle()
                     .bigPicture(bitmap)
                     .setSummaryText(body);
