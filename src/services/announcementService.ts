@@ -25,6 +25,10 @@ export interface AppAnnouncement {
   isDismissible?: boolean;
   /** If true, only shows once per device. Once dismissed, never shows again for this announcement id. */
   showOnce?: boolean;
+  /** Scheduled go-live timestamp (ISO string). */
+  publishAt?: string;
+  /** If false, hidden from the Announcements feed/list tab (e.g. pop-up modal only). Default: true */
+  pinToFeed?: boolean;
 }
 
 const CACHE_KEY = 'sof_cached_announcements';

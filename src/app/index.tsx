@@ -188,8 +188,9 @@ export default function HomeScreen() {
 
   const openAnnouncementsModal = async () => {
     setAnnouncementsModalVisible(true);
-    if (announcements.length > 0) {
-      await announcementService.markAsRead(announcements[0].id);
+    const feedList = announcements.filter((item) => item.pinToFeed !== false);
+    if (feedList.length > 0) {
+      await announcementService.markAsRead(feedList[0].id);
       setHasUnreadAnnouncements(false);
     }
   };
@@ -210,7 +211,8 @@ export default function HomeScreen() {
 
       if (annResult.status === 'fulfilled') {
         setAnnouncements(annResult.value);
-        const hasUnread = await announcementService.hasUnreadAnnouncements(annResult.value);
+        const feedList = annResult.value.filter((item) => item.pinToFeed !== false);
+        const hasUnread = await announcementService.hasUnreadAnnouncements(feedList);
         setHasUnreadAnnouncements(hasUnread);
       }
       
@@ -774,8 +776,10 @@ export default function HomeScreen() {
         title="Announcements"
       >
         <ScrollView style={styles.announcementsList} showsVerticalScrollIndicator={false}>
-          {announcements.length > 0 ? (
-            announcements.map((item) => {
+          {(() => {
+            const feedList = announcements.filter((item) => item.pinToFeed !== false);
+            return feedList.length > 0 ? (
+              feedList.map((item) => {
               const formattedDate = new Date(item.createdAt).toLocaleDateString(undefined, {
                 month: 'short',
                 day: 'numeric',
@@ -909,7 +913,8 @@ export default function HomeScreen() {
                 ))
               ) : null}
             </>
-          )}
+          );
+        })()}
         </ScrollView>
       </SwipeableModal>
     </LinearGradient>
