@@ -3,6 +3,15 @@
     "name": "Christ Pavilion",
     "slug": "spirit-of-faith-app",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e3248356-d9ed-4556-bef2-235a7f475a41",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 10000
+    },
     "orientation": "portrait",
     "icon": "./assets/images/app-icon.png",
     "scheme": "spiritoffaithapp",

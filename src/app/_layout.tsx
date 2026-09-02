@@ -10,6 +10,8 @@ import AudioPlayer from '../components/AudioPlayer';
 import IosPwaInstallPrompt from '../components/IosPwaInstallPrompt';
 import BroadcastModal from '../components/BroadcastModal';
 import { useBroadcast } from '../hooks/useBroadcast';
+import { UpdateBanner } from '../components/UpdateBanner';
+import { useAppUpdate } from '../hooks/useAppUpdate';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Home, Music, BookOpen, Calendar, MapPin, MoreHorizontal, Library } from 'lucide-react-native';
@@ -40,6 +42,9 @@ function AppContent() {
 
   // Remote In-App Broadcast Pop-up
   const { broadcast, isVisible, dismissBroadcast, actOnBroadcast } = useBroadcast();
+
+  // Over-The-Air (EAS Update) Background Listener
+  const { isUpdateReady, reloadApp, dismissBanner } = useAppUpdate();
 
   // Initialize push notifications and analytics on launch
   useEffect(() => {
@@ -332,6 +337,13 @@ function AppContent() {
 
       {/* iOS Safari PWA Install Banner */}
       <IosPwaInstallPrompt />
+
+      {/* Over-The-Air (EAS Update) Notification Banner */}
+      <UpdateBanner
+        isVisible={isUpdateReady}
+        onReload={reloadApp}
+        onDismiss={dismissBanner}
+      />
 
       {/* Remote In-App Broadcast Pop-up — rendered last to sit above everything */}
       <BroadcastModal
