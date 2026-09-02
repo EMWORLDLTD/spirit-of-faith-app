@@ -68,8 +68,6 @@ public class ChristPavilionNotificationService extends FirebaseMessagingService 
             else if (data.containsKey("body") && data.get("body") != null && !data.get("body").startsWith("{")) {
                 body = data.get("body");
             }
-
-            }
             
             // Search all keys in the intent data for JSON objects and parse them aggressively
             for (String key : data.keySet()) {
