@@ -1,9 +1,9 @@
-﻿module.exports = ({ config }) => {
+module.exports = ({ config }) => {
   const isDev = process.env.APP_VARIANT === 'development';
 
   return {
     ...config,
-    name: isDev ? 'Christ Pavilion (Dev)' : config.name,
+    name: isDev ? '(Dev) Christ Pavilion' : config.name,
     scheme: isDev ? 'spiritoffaithapp-dev' : config.scheme,
     ios: {
       ...config.ios,
